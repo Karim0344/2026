@@ -38,21 +38,26 @@ class TradingEngine:
         self._last_market_closed_ts = 0.0
 
     def start(self):
-        terminal = client.initialize(
-            terminal_path=self.cfg.terminal_path,
-            login=self.cfg.mt5_login,
-            password=self.cfg.mt5_password,
-            server=self.cfg.mt5_server,
-        )
-        self.cfg.symbol = client.resolve_symbol(self.cfg.symbol, auto_resolve=self.cfg.auto_resolve_symbol)
-        logging.info("ENGINE_MT5_READY terminal=%s symbol=%s", terminal, self.cfg.symbol)
-        self._reset_day_if_needed(force=True)
+        try:
+            terminal = client.initialize(
+                terminal_path=self.cfg.terminal_path,
+                login=self.cfg.mt5_login,
+                password=self.cfg.mt5_password,
+                server=self.cfg.mt5_server,
+            )
+            self.cfg.symbol = client.resolve_symbol(self.cfg.symbol, auto_resolve=self.cfg.auto_resolve_symbol)
+            logging.info("ENGINE_MT5_READY terminal=%s symbol=%s", terminal, self.cfg.symbol)
+            self._reset_day_if_needed(force=True)
 
-        self.stop_event.clear()
-        threading.Thread(target=self._entry_loop, daemon=True, name="entry-loop").start()
-        threading.Thread(target=self._manage_loop, daemon=True, name="manage-loop").start()
-        self.status.running = True
-        logging.info("ENGINE_STARTED")
+            self.stop_event.clear()
+            threading.Thread(target=self._entry_loop, daemon=True, name="entry-loop").start()
+            threading.Thread(target=self._manage_loop, daemon=True, name="manage-loop").start()
+            self.status.running = True
+            logging.info("ENGINE_STARTED")
+        except Exception:
+            self.status.running = False
+            client.shutdown()
+            raise
 
     def stop(self):
         self.stop_event.set()
@@ -94,20 +99,20 @@ class TradingEngine:
             return diag.spread_points <= self.cfg.max_spread_points
         except Exception as e:
             import time
-            now = time.time()
-            # avoid log spam
-            if now - self._last_diag_err_ts > 15:
-                self._last_diag_err_ts = now
-                logging.error(f"SYMBOL_DIAG_ERROR: {e}")
+
             msg = str(e)
-            if "tick not available" in msg.lower() or "market is closed" in msg.lower():
-                import time
+            msg_l = msg.lower()
+            if "tick not available" in msg_l or "market is closed" in msg_l:
                 now = time.time()
-                if now - self._last_market_closed_ts > 30:
+                if now - self._last_market_closed_ts > 120:
                     self._last_market_closed_ts = now
                     logging.info("MARKET_DATA_UNAVAILABLE symbol=%s", self.cfg.symbol)
                 self.status.last_msg = "market_closed/no_ticks"
             else:
+                now = time.time()
+                if now - self._last_diag_err_ts > 30:
+                    self._last_diag_err_ts = now
+                    logging.error(f"SYMBOL_DIAG_ERROR: {e}")
                 self.status.last_msg = f"symbol_error: {e}"
             return False
 

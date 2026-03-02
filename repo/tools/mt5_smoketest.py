@@ -46,12 +46,15 @@ def main() -> int:
             password=password,
             server=server,
         )
+        term_info = mt5.terminal_info()
         account = mt5.account_info()
         resolved = client.resolve_symbol(symbol, auto_resolve=True)
         tick = mt5.symbol_info_tick(resolved)
 
         print("MT5 smoke test")
         print(f"terminal_path_used: {terminal_used}")
+        print(f"terminal_company: {getattr(term_info, 'company', 'N/A')}")
+        print(f"terminal_connected: {getattr(term_info, 'connected', 'N/A')}")
         print(f"account_login: {getattr(account, 'login', 'N/A')}")
         print(f"account_server: {getattr(account, 'server', 'N/A')}")
         print(f"symbol_requested: {symbol}")

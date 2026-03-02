@@ -97,23 +97,32 @@ class App:
         ttk.Button(term_frame, text="Browse", command=browse).pack(side="left", padx=6)
         add_row(1, "MT5 terminal path (optional):", term_frame)
 
+        self.login_var = tk.StringVar(value=str(self.cfg.mt5_login or ""))
+        add_row(2, "MT5 login (optional):", ttk.Entry(grid, textvariable=self.login_var))
+
+        self.password_var = tk.StringVar(value=self.cfg.mt5_password)
+        add_row(3, "MT5 password (optional):", ttk.Entry(grid, textvariable=self.password_var, show="*"))
+
+        self.server_var = tk.StringVar(value=self.cfg.mt5_server)
+        add_row(4, "MT5 server (optional):", ttk.Entry(grid, textvariable=self.server_var))
+
         self.paper_var = tk.BooleanVar(value=bool(getattr(self.cfg, "paper_mode", False)))
-        add_row(2, "Paper mode (no orders):", ttk.Checkbutton(grid, variable=self.paper_var))
+        add_row(5, "Paper mode (no orders):", ttk.Checkbutton(grid, variable=self.paper_var))
 
         self.tf_var = tk.StringVar(value=self.cfg.timeframe)
-        add_row(3, "Timeframe:", ttk.Combobox(grid, textvariable=self.tf_var, values=["M5", "M15", "H1", "H4"], state="readonly"))
+        add_row(6, "Timeframe:", ttk.Combobox(grid, textvariable=self.tf_var, values=["M5", "M15", "H1", "H4"], state="readonly"))
 
         self.risk_var = tk.DoubleVar(value=self.cfg.risk_percent)
-        add_row(4, "Risk % per batch:", ttk.Entry(grid, textvariable=self.risk_var))
+        add_row(7, "Risk % per batch:", ttk.Entry(grid, textvariable=self.risk_var))
 
         self.daily_var = tk.DoubleVar(value=self.cfg.daily_stop_percent)
-        add_row(5, "Daily stop %:", ttk.Entry(grid, textvariable=self.daily_var))
+        add_row(8, "Daily stop %:", ttk.Entry(grid, textvariable=self.daily_var))
 
         self.spread_var = tk.IntVar(value=self.cfg.max_spread_points)
-        add_row(6, "Max spread (points):", ttk.Entry(grid, textvariable=self.spread_var))
+        add_row(9, "Max spread (points):", ttk.Entry(grid, textvariable=self.spread_var))
 
         self.magic_var = tk.IntVar(value=self.cfg.magic)
-        add_row(7, "Magic number:", ttk.Entry(grid, textvariable=self.magic_var))
+        add_row(10, "Magic number:", ttk.Entry(grid, textvariable=self.magic_var))
 
         btns = ttk.Frame(frm)
         btns.pack(fill="x", pady=10)
@@ -139,6 +148,9 @@ class App:
         self.cfg.symbol = self.symbol_var.get().strip()
         self.cfg.timeframe = self.tf_var.get().strip()
         self.cfg.terminal_path = self.term_var.get().strip()
+        self.cfg.mt5_login = int(self.login_var.get().strip()) if self.login_var.get().strip() else None
+        self.cfg.mt5_password = self.password_var.get()
+        self.cfg.mt5_server = self.server_var.get().strip()
         self.cfg.paper_mode = bool(self.paper_var.get())
         self.cfg.risk_percent = float(self.risk_var.get())
         self.cfg.daily_stop_percent = float(self.daily_var.get())
