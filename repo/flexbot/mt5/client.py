@@ -21,6 +21,19 @@ _AUTH_ERRORS = {-6, -2}
 _LAST_NO_TICK_WARN_AT: dict[str, float] = {}
 
 
+def _validate_session_state(context: str = "") -> tuple[object, object]:
+    term_info = mt5.terminal_info()
+    acct_info = mt5.account_info()
+    if term_info is None or acct_info is None:
+        last_err = mt5.last_error()
+        raise RuntimeError(
+            "MT5 session validation failed"
+            f"{f' ({context})' if context else ''}: terminal_info/account_info unavailable, "
+            f"last_error={last_err}. Ensure MT5 terminal is open and logged in."
+        )
+    return term_info, acct_info
+
+
 @dataclass
 class SymbolDiagnostics:
     symbol: str
@@ -81,24 +94,34 @@ def initialize(
     for attempt in range(1, retries + 1):
         ok = mt5.initialize(**init_kwargs)
         if ok:
-            info = mt5.terminal_info()
-            if info is not None:
+            try:
+                info, account = _validate_session_state(context="post-initialize")
                 terminal_used = getattr(info, "path", terminal_used)
-            if auth_present:
-                auth_ok = mt5.login(login=login or 0, password=password or "", server=server or "")
-                if not auth_ok:
-                    auth_err = mt5.last_error()
-                    err_code = int(auth_err[0]) if auth_err else 0
-                    if err_code in _AUTH_ERRORS:
-                        mt5.shutdown()
-                        raise RuntimeError(
-                            "MT5 login failed due to authorization data. "
-                            f"login/server={_masked_auth(login, server)} error={auth_err}"
-                        )
-                    mt5.shutdown()
-                    raise RuntimeError(f"MT5 login failed: {auth_err}")
-            logging.info("MT5_INIT_OK terminal=%s", terminal_used)
-            return terminal_used
+
+                if auth_present:
+                    auth_ok = mt5.login(login=login or 0, password=password or "", server=server or "")
+                    if not auth_ok:
+                        auth_err = mt5.last_error()
+                        err_code = int(auth_err[0]) if auth_err else 0
+                        if err_code in _AUTH_ERRORS:
+                            raise RuntimeError(
+                                "MT5 login failed due to authorization data. "
+                                f"login/server={_masked_auth(login, server)} error={auth_err}"
+                            )
+                        raise RuntimeError(f"MT5 login failed: {auth_err}")
+                    info, account = _validate_session_state(context="post-login")
+                    terminal_used = getattr(info, "path", terminal_used)
+
+                logging.info(
+                    "MT5_INIT_OK terminal=%s account_login=%s server=%s",
+                    terminal_used,
+                    getattr(account, "login", "-"),
+                    getattr(account, "server", "-"),
+                )
+                return terminal_used
+            except Exception:
+                mt5.shutdown()
+                raise
 
         last_err = mt5.last_error()
         err_code = int(last_err[0]) if last_err else 0
@@ -212,7 +235,7 @@ def ensure_symbol(symbol: str) -> None:
             raise RuntimeError(f"Could not select symbol: {symbol}")
 
 
-def _log_no_tick_once(symbol: str, message: str, interval_s: float = 30.0) -> None:
+def _log_no_tick_once(symbol: str, message: str, interval_s: float = 120.0) -> None:
     now = time.time()
     last = _LAST_NO_TICK_WARN_AT.get(symbol, 0.0)
     if now - last >= interval_s:

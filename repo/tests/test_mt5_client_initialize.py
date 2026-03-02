@@ -29,7 +29,7 @@ class TestMt5Initialize(unittest.TestCase):
             "flexbot.mt5.client.mt5.initialize", side_effect=fake_initialize, create=True
         ), patch("flexbot.mt5.client.mt5.last_error", return_value=(-1, "boom"), create=True), patch(
             "flexbot.mt5.client.mt5.terminal_info", return_value=SimpleNamespace(path="C:/MT5/terminal64.exe"), create=True
-        ):
+        ), patch("flexbot.mt5.client.mt5.account_info", return_value=SimpleNamespace(login=1, server="s"), create=True):
             used = self.client.initialize(terminal_path="C:/MT5/terminal64.exe", retries=2)
 
         self.assertEqual(used, "C:/MT5/terminal64.exe")
@@ -41,9 +41,21 @@ class TestMt5Initialize(unittest.TestCase):
             "flexbot.mt5.client.mt5.login", return_value=False, create=True
         ), patch("flexbot.mt5.client.mt5.last_error", return_value=(-6, "auth failed"), create=True), patch(
             "flexbot.mt5.client.mt5.shutdown", create=True
-        ), patch("flexbot.mt5.client.mt5.terminal_info", return_value=None, create=True):
+        ), patch("flexbot.mt5.client.mt5.terminal_info", return_value=SimpleNamespace(path="C:/MT5/terminal64.exe"), create=True), patch(
+            "flexbot.mt5.client.mt5.account_info", return_value=SimpleNamespace(login=123, server="srv"), create=True
+        ):
             with self.assertRaises(RuntimeError):
                 self.client.initialize(login=123, password="bad", server="srv")
+
+    def test_initialize_validation_failure_shutdowns(self):
+        with patch("flexbot.mt5.client.mt5.initialize", return_value=True, create=True), patch(
+            "flexbot.mt5.client.mt5.terminal_info", return_value=None, create=True
+        ), patch("flexbot.mt5.client.mt5.account_info", return_value=None, create=True), patch(
+            "flexbot.mt5.client.mt5.last_error", return_value=(-1, "no connection"), create=True
+        ), patch("flexbot.mt5.client.mt5.shutdown", create=True) as shutdown_mock:
+            with self.assertRaises(RuntimeError):
+                self.client.initialize()
+            self.assertTrue(shutdown_mock.called)
 
 
 if __name__ == "__main__":
