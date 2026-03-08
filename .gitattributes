@@ -1,0 +1,2 @@
+# Normalize Python sources to LF to keep GitHub raw rendering readable.
+*.py text eol=lf
