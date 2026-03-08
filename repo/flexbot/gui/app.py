@@ -366,7 +366,11 @@ class App:
                     text=f"Status: {self._human_status(st.last_msg)}"
                 )
                 self.metrics_lbl.configure(
-                    text=f"Equity: {st.equity:.2f} | Daily DD: {st.daily_dd*100:.2f}% | Loss streak: {st.consec_losses}"
+                    text=(
+                        f"Equity: {st.equity:.2f} | "
+                        f"Daily DD: {st.daily_dd * 100:.2f}% | "
+                        f"Loss streak: {st.consec_losses}"
+                    )
                 )
             elif self.engine and not self.engine.status.running:
                 self.status_lbl.configure(text="Status: Gestopt")
