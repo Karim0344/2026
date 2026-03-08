@@ -40,7 +40,9 @@ class TradingEngine:
         self._manage_thread: threading.Thread | None = None
 
     def start(self):
+        mt5_initialize_started = False
         try:
+            mt5_initialize_started = True
             terminal = client.initialize(
                 terminal_path=self.cfg.terminal_path,
                 login=self.cfg.mt5_login,
@@ -62,15 +64,20 @@ class TradingEngine:
             self.stop_event.set()
             self._join_worker_threads(timeout=1.0)
             self.status.running = False
-            client.shutdown()
+            if mt5_initialize_started:
+                self._shutdown_mt5()
             raise
 
     def stop(self):
         self.stop_event.set()
         self._join_worker_threads(timeout=2.0)
         self.status.running = False
-        client.shutdown()
+        self._shutdown_mt5()
         logging.info("ENGINE_STOPPED")
+
+    def _shutdown_mt5(self):
+        client.shutdown()
+        logging.info("MT5 shutdown complete")
 
     def _join_worker_threads(self, timeout: float):
         for attr in ("_entry_thread", "_manage_thread"):
