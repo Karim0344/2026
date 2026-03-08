@@ -11,6 +11,7 @@ from flexbot.trading.state import BatchState, load_state, save_state
 from flexbot.trading.execution import open_batch
 from flexbot.trading.manager import manage_batch
 
+
 @dataclass
 class EngineStatus:
     running: bool = False
@@ -18,6 +19,7 @@ class EngineStatus:
     equity: float = 0.0
     daily_dd: float = 0.0
     consec_losses: int = 0
+
 
 class TradingEngine:
     def __init__(self, cfg: BotConfig):
@@ -49,13 +51,21 @@ class TradingEngine:
                 password=self.cfg.mt5_password,
                 server=self.cfg.mt5_server,
             )
-            self.cfg.symbol = client.resolve_symbol(self.cfg.symbol, auto_resolve=self.cfg.auto_resolve_symbol)
-            logging.info("ENGINE_MT5_READY terminal=%s symbol=%s", terminal, self.cfg.symbol)
+            self.cfg.symbol = client.resolve_symbol(
+                self.cfg.symbol, auto_resolve=self.cfg.auto_resolve_symbol
+            )
+            logging.info(
+                "ENGINE_MT5_READY terminal=%s symbol=%s", terminal, self.cfg.symbol
+            )
             self._reset_day_if_needed(force=True)
 
             self.stop_event.clear()
-            self._entry_thread = threading.Thread(target=self._entry_loop, daemon=True, name="entry-loop")
-            self._manage_thread = threading.Thread(target=self._manage_loop, daemon=True, name="manage-loop")
+            self._entry_thread = threading.Thread(
+                target=self._entry_loop, daemon=True, name="entry-loop"
+            )
+            self._manage_thread = threading.Thread(
+                target=self._manage_loop, daemon=True, name="manage-loop"
+            )
             self._entry_thread.start()
             self._manage_thread.start()
             self.status.running = True
@@ -99,7 +109,11 @@ class TradingEngine:
     def _update_guards(self):
         self._reset_day_if_needed()
         eq = client.account_equity()
-        dd = (eq - self.equity_day_start) / self.equity_day_start if self.equity_day_start else 0.0
+        dd = (
+            (eq - self.equity_day_start) / self.equity_day_start
+            if self.equity_day_start
+            else 0.0
+        )
         self.status.equity = eq
         self.status.daily_dd = dd
         self.status.consec_losses = self.consec_losses
@@ -111,7 +125,9 @@ class TradingEngine:
 
         if self.consec_losses >= self.cfg.max_consec_loss:
             if not self.trading_disabled_today:
-                logging.warning(f"CONSEC_LOSS_STOP triggered losses={self.consec_losses}")
+                logging.warning(
+                    f"CONSEC_LOSS_STOP triggered losses={self.consec_losses}"
+                )
             self.trading_disabled_today = True
 
     def _spread_ok(self) -> bool:
@@ -172,9 +188,15 @@ class TradingEngine:
                         sl_atr_buffer_mult=self.cfg.sl_atr_buffer_mult,
                         last_closed_bar_time=self.last_closed_bar_time,
                     )
-                    if intent.valid and intent.batch_id != self.last_batch_id and closed_bar_time:
+                    if (
+                        intent.valid
+                        and intent.batch_id != self.last_batch_id
+                        and closed_bar_time
+                    ):
                         if self.cfg.paper_mode:
-                            logging.info(f"PAPER_SIGNAL batch_id={intent.batch_id} side={'BUY' if intent.is_long else 'SELL'} sl={intent.sl:.5f}")
+                            logging.info(
+                                f"PAPER_SIGNAL batch_id={intent.batch_id} side={'BUY' if intent.is_long else 'SELL'} sl={intent.sl:.5f}"
+                            )
                             self.last_batch_id = intent.batch_id
                             self.last_closed_bar_time = closed_bar_time
                             self.status.last_msg = "paper_signal_logged"
@@ -225,7 +247,9 @@ class TradingEngine:
                     if not self.state.batch_id and prev.batch_id:
                         # batch finished -> compute batch profit by summing deals with batch_id
                         now = client.broker_datetime_utc(self.cfg.symbol)
-                        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                        day_start = now.replace(
+                            hour=0, minute=0, second=0, microsecond=0
+                        )
                         deals = client.history_deals(day_start, now)
                         pnl = 0.0
                         key = f"FlexBot|{prev.batch_id}|"
@@ -239,7 +263,9 @@ class TradingEngine:
                             self.consec_losses += 1
                         else:
                             self.consec_losses = 0
-                        logging.info(f"BATCH_PNL id={prev.batch_id} pnl={pnl} consec_losses={self.consec_losses}")
+                        logging.info(
+                            f"BATCH_PNL id={prev.batch_id} pnl={pnl} consec_losses={self.consec_losses}"
+                        )
                 else:
                     # try recover from open positions if state empty
                     pass

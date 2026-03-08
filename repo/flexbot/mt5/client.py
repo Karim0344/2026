@@ -73,7 +73,9 @@ def initialize(
         if os.path.exists(p):
             use_path = p
         else:
-            logging.warning('TERMINAL_PATH_INVALID path="%s" -> fallback to no-path attach', p)
+            logging.warning(
+                'TERMINAL_PATH_INVALID path="%s" -> fallback to no-path attach', p
+            )
 
     init_kwargs = {"timeout": int(timeout_ms)}
     if use_path:
@@ -99,7 +101,9 @@ def initialize(
                 terminal_used = getattr(info, "path", terminal_used)
 
                 if auth_present:
-                    auth_ok = mt5.login(login=login or 0, password=password or "", server=server or "")
+                    auth_ok = mt5.login(
+                        login=login or 0, password=password or "", server=server or ""
+                    )
                     if not auth_ok:
                         auth_err = mt5.last_error()
                         err_code = int(auth_err[0]) if auth_err else 0
@@ -125,7 +129,9 @@ def initialize(
 
         last_err = mt5.last_error()
         err_code = int(last_err[0]) if last_err else 0
-        logging.warning("MT5_INIT_ATTEMPT_FAILED attempt=%s/%s error=%s", attempt, retries, last_err)
+        logging.warning(
+            "MT5_INIT_ATTEMPT_FAILED attempt=%s/%s error=%s", attempt, retries, last_err
+        )
 
         if err_code in _IPC_TIMEOUT_ERRORS and attempt < retries:
             time.sleep(min(1.5 * attempt, 5.0))
@@ -161,7 +167,8 @@ def tf_to_mt5(timeframe: str) -> int:
 
 def resolve_symbol(symbol: str, auto_resolve: bool = True) -> str:
     """Return a usable symbol name. If symbol not found or has no ticks and auto_resolve,
-    attempt to find a close alternative (broker suffixes like XAUUSD#, XAUUSDm, GOLD)."""
+    attempt to find a close alternative (broker suffixes like XAUUSD#, XAUUSDm, GOLD).
+    """
     info = mt5.symbol_info(symbol)
     if info is None:
         if not auto_resolve:
@@ -172,10 +179,18 @@ def resolve_symbol(symbol: str, auto_resolve: bool = True) -> str:
             raise RuntimeError(f"Symbol not found in MT5: {symbol}")
         sym_u = symbol.upper()
         if "XAU" in sym_u or "GOLD" in sym_u:
-            cand = [s.name for s in all_syms if ("XAU" in s.name.upper() or "GOLD" in s.name.upper())]
+            cand = [
+                s.name
+                for s in all_syms
+                if ("XAU" in s.name.upper() or "GOLD" in s.name.upper())
+            ]
         else:
             base = re.sub(r"[^A-Z0-9]", "", sym_u)
-            cand = [s.name for s in all_syms if base in re.sub(r"[^A-Z0-9]", "", s.name.upper())]
+            cand = [
+                s.name
+                for s in all_syms
+                if base in re.sub(r"[^A-Z0-9]", "", s.name.upper())
+            ]
         cand = cand[:50]
         # pick first with valid tick
         for name in cand:
@@ -188,27 +203,41 @@ def resolve_symbol(symbol: str, auto_resolve: bool = True) -> str:
             except Exception:
                 continue
         logging.error("Symbol not found: %s. Candidates tried: %s", symbol, cand[:20])
-        raise RuntimeError(f"Symbol not found in MT5: {symbol}. Check Market Watch exact name.")
+        raise RuntimeError(
+            f"Symbol not found in MT5: {symbol}. Check Market Watch exact name."
+        )
     # ensure visible
     if not info.visible:
         mt5.symbol_select(symbol, True)
     # if no tick and auto_resolve, try alternatives with same base
     t = mt5.symbol_info_tick(symbol)
-    if (t is None or getattr(t, "bid", 0) <= 0 or getattr(t, "ask", 0) <= 0) and auto_resolve:
+    if (
+        t is None or getattr(t, "bid", 0) <= 0 or getattr(t, "ask", 0) <= 0
+    ) and auto_resolve:
         all_syms = mt5.symbols_get() or []
         sym_u = symbol.upper()
         if "XAU" in sym_u or "GOLD" in sym_u:
-            cand = [s.name for s in all_syms if ("XAU" in s.name.upper() or "GOLD" in s.name.upper())]
+            cand = [
+                s.name
+                for s in all_syms
+                if ("XAU" in s.name.upper() or "GOLD" in s.name.upper())
+            ]
         else:
             base = re.sub(r"[^A-Z0-9]", "", sym_u)
-            cand = [s.name for s in all_syms if base in re.sub(r"[^A-Z0-9]", "", s.name.upper())]
+            cand = [
+                s.name
+                for s in all_syms
+                if base in re.sub(r"[^A-Z0-9]", "", s.name.upper())
+            ]
         cand = cand[:50]
         for name in cand:
             try:
                 if mt5.symbol_select(name, True):
                     tt = mt5.symbol_info_tick(name)
                     if tt and getattr(tt, "bid", 0) > 0 and getattr(tt, "ask", 0) > 0:
-                        logging.warning("Auto-resolved symbol (tick): %s -> %s", symbol, name)
+                        logging.warning(
+                            "Auto-resolved symbol (tick): %s -> %s", symbol, name
+                        )
                         return name
             except Exception:
                 continue
@@ -221,9 +250,15 @@ def ensure_symbol(symbol: str) -> None:
         try:
             all_syms = mt5.symbols_get()
             if all_syms:
-                cand = [s.name for s in all_syms if ("XAU" in s.name.upper() or "GOLD" in s.name.upper())]
+                cand = [
+                    s.name
+                    for s in all_syms
+                    if ("XAU" in s.name.upper() or "GOLD" in s.name.upper())
+                ]
                 cand = cand[:20]
-                logging.error("Symbol not found: %s. Possible gold symbols: %s", symbol, cand)
+                logging.error(
+                    "Symbol not found: %s. Possible gold symbols: %s", symbol, cand
+                )
         except Exception:
             pass
         raise RuntimeError(
@@ -252,7 +287,11 @@ def get_symbol_diagnostics(symbol: str) -> SymbolDiagnostics:
     tick = None
     for _ in range(6):
         tick = mt5.symbol_info_tick(symbol)
-        if tick is not None and getattr(tick, "bid", 0.0) > 0 and getattr(tick, "ask", 0.0) > 0:
+        if (
+            tick is not None
+            and getattr(tick, "bid", 0.0) > 0
+            and getattr(tick, "ask", 0.0) > 0
+        ):
             break
         time.sleep(0.5)
 
@@ -269,7 +308,11 @@ def get_symbol_diagnostics(symbol: str) -> SymbolDiagnostics:
             "If the market is closed, wait until it opens."
         )
 
-    spread_points = int(round((tick.ask - tick.bid) / info.point)) if info.point else int(getattr(info, "spread", 0))
+    spread_points = (
+        int(round((tick.ask - tick.bid) / info.point))
+        if info.point
+        else int(getattr(info, "spread", 0))
+    )
 
     stops_level = getattr(info, "stops_level", None)
     if stops_level is None:

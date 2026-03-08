@@ -26,33 +26,65 @@ class TestMt5Initialize(unittest.TestCase):
             return len(calls) > 1
 
         with patch("flexbot.mt5.client.os.path.exists", return_value=True), patch(
-            "flexbot.mt5.client.mt5.initialize", side_effect=fake_initialize, create=True
-        ), patch("flexbot.mt5.client.mt5.last_error", return_value=(-1, "boom"), create=True), patch(
-            "flexbot.mt5.client.mt5.terminal_info", return_value=SimpleNamespace(path="C:/MT5/terminal64.exe"), create=True
-        ), patch("flexbot.mt5.client.mt5.account_info", return_value=SimpleNamespace(login=1, server="s"), create=True):
-            used = self.client.initialize(terminal_path="C:/MT5/terminal64.exe", retries=2)
+            "flexbot.mt5.client.mt5.initialize",
+            side_effect=fake_initialize,
+            create=True,
+        ), patch(
+            "flexbot.mt5.client.mt5.last_error", return_value=(-1, "boom"), create=True
+        ), patch(
+            "flexbot.mt5.client.mt5.terminal_info",
+            return_value=SimpleNamespace(path="C:/MT5/terminal64.exe"),
+            create=True,
+        ), patch(
+            "flexbot.mt5.client.mt5.account_info",
+            return_value=SimpleNamespace(login=1, server="s"),
+            create=True,
+        ):
+            used = self.client.initialize(
+                terminal_path="C:/MT5/terminal64.exe", retries=2
+            )
 
         self.assertEqual(used, "C:/MT5/terminal64.exe")
         self.assertIn("path", calls[0])
         self.assertNotIn("path", calls[1])
 
     def test_authorization_failure_raises(self):
-        with patch("flexbot.mt5.client.mt5.initialize", return_value=True, create=True), patch(
+        with patch(
+            "flexbot.mt5.client.mt5.initialize", return_value=True, create=True
+        ), patch(
             "flexbot.mt5.client.mt5.login", return_value=False, create=True
-        ), patch("flexbot.mt5.client.mt5.last_error", return_value=(-6, "auth failed"), create=True), patch(
+        ), patch(
+            "flexbot.mt5.client.mt5.last_error",
+            return_value=(-6, "auth failed"),
+            create=True,
+        ), patch(
             "flexbot.mt5.client.mt5.shutdown", create=True
-        ), patch("flexbot.mt5.client.mt5.terminal_info", return_value=SimpleNamespace(path="C:/MT5/terminal64.exe"), create=True), patch(
-            "flexbot.mt5.client.mt5.account_info", return_value=SimpleNamespace(login=123, server="srv"), create=True
+        ), patch(
+            "flexbot.mt5.client.mt5.terminal_info",
+            return_value=SimpleNamespace(path="C:/MT5/terminal64.exe"),
+            create=True,
+        ), patch(
+            "flexbot.mt5.client.mt5.account_info",
+            return_value=SimpleNamespace(login=123, server="srv"),
+            create=True,
         ):
             with self.assertRaises(RuntimeError):
                 self.client.initialize(login=123, password="bad", server="srv")
 
     def test_initialize_validation_failure_shutdowns(self):
-        with patch("flexbot.mt5.client.mt5.initialize", return_value=True, create=True), patch(
+        with patch(
+            "flexbot.mt5.client.mt5.initialize", return_value=True, create=True
+        ), patch(
             "flexbot.mt5.client.mt5.terminal_info", return_value=None, create=True
-        ), patch("flexbot.mt5.client.mt5.account_info", return_value=None, create=True), patch(
-            "flexbot.mt5.client.mt5.last_error", return_value=(-1, "no connection"), create=True
-        ), patch("flexbot.mt5.client.mt5.shutdown", create=True) as shutdown_mock:
+        ), patch(
+            "flexbot.mt5.client.mt5.account_info", return_value=None, create=True
+        ), patch(
+            "flexbot.mt5.client.mt5.last_error",
+            return_value=(-1, "no connection"),
+            create=True,
+        ), patch(
+            "flexbot.mt5.client.mt5.shutdown", create=True
+        ) as shutdown_mock:
             with self.assertRaises(RuntimeError):
                 self.client.initialize()
             self.assertTrue(shutdown_mock.called)

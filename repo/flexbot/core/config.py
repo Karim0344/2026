@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+
 @dataclass
 class BotConfig:
     symbol: str = "XAUUSD"
@@ -37,5 +38,5 @@ class BotConfig:
     trail_step_atr_mult: float = 0.3
 
     # Loop
-    entry_check_seconds: float = 1.0   # check new bar via tick time
+    entry_check_seconds: float = 1.0  # check new bar via tick time
     manage_seconds: float = 1.0

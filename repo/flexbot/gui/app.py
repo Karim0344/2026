@@ -78,14 +78,20 @@ class App:
         frm = ttk.Frame(self.root, padding=12)
         frm.pack(fill="both", expand=True)
 
-        title = ttk.Label(frm, text="FlexBot Python v1 (Rebuild) — Execution + Risk Engine", font=("Arial", 14, "bold"))
+        title = ttk.Label(
+            frm,
+            text="FlexBot Python v1 (Rebuild) — Execution + Risk Engine",
+            font=("Arial", 14, "bold"),
+        )
         title.pack(pady=(0, 8))
 
         grid = ttk.Frame(frm)
         grid.pack(fill="x")
 
         def add_row(r, label, widget):
-            ttk.Label(grid, text=label).grid(row=r, column=0, sticky="w", padx=(0, 10), pady=4)
+            ttk.Label(grid, text=label).grid(
+                row=r, column=0, sticky="w", padx=(0, 10), pady=4
+            )
             widget.grid(row=r, column=1, sticky="ew", pady=4)
             grid.grid_columnconfigure(1, weight=1)
 
@@ -93,9 +99,20 @@ class App:
         add_row(0, "Symbol:", ttk.Entry(grid, textvariable=self.symbol_var))
 
         self.tf_var = tk.StringVar(value=self.cfg.timeframe)
-        add_row(1, "Timeframe:", ttk.Combobox(grid, textvariable=self.tf_var, values=["M5", "M15", "H1", "H4"], state="readonly"))
+        add_row(
+            1,
+            "Timeframe:",
+            ttk.Combobox(
+                grid,
+                textvariable=self.tf_var,
+                values=["M5", "M15", "H1", "H4"],
+                state="readonly",
+            ),
+        )
 
-        self.paper_var = tk.BooleanVar(value=bool(getattr(self.cfg, "paper_mode", False)))
+        self.paper_var = tk.BooleanVar(
+            value=bool(getattr(self.cfg, "paper_mode", False))
+        )
         add_row(2, "Paper mode:", ttk.Checkbutton(grid, variable=self.paper_var))
 
         self.advanced_toggle_btn = ttk.Button(
@@ -110,7 +127,9 @@ class App:
         advanced_grid.pack(fill="x")
 
         def add_adv_row(r, label, widget):
-            ttk.Label(advanced_grid, text=label).grid(row=r, column=0, sticky="w", padx=(0, 10), pady=3)
+            ttk.Label(advanced_grid, text=label).grid(
+                row=r, column=0, sticky="w", padx=(0, 10), pady=3
+            )
             widget.grid(row=r, column=1, sticky="ew", pady=3)
             advanced_grid.grid_columnconfigure(1, weight=1)
 
@@ -122,7 +141,11 @@ class App:
         def browse():
             p = filedialog.askopenfilename(
                 title="Select terminal64.exe",
-                filetypes=[("terminal64.exe", "terminal64.exe"), ("Executables", "*.exe"), ("All files", "*.*")],
+                filetypes=[
+                    ("terminal64.exe", "terminal64.exe"),
+                    ("Executables", "*.exe"),
+                    ("All files", "*.*"),
+                ],
             )
             if p:
                 self.term_var.set(p)
@@ -131,25 +154,43 @@ class App:
         add_adv_row(0, "MT5 terminal path:", term_frame)
 
         self.login_var = tk.StringVar(value=str(self.cfg.mt5_login or ""))
-        add_adv_row(1, "MT5 login:", ttk.Entry(advanced_grid, textvariable=self.login_var))
+        add_adv_row(
+            1, "MT5 login:", ttk.Entry(advanced_grid, textvariable=self.login_var)
+        )
 
         self.password_var = tk.StringVar(value=self.cfg.mt5_password)
-        add_adv_row(2, "MT5 password:", ttk.Entry(advanced_grid, textvariable=self.password_var, show="*"))
+        add_adv_row(
+            2,
+            "MT5 password:",
+            ttk.Entry(advanced_grid, textvariable=self.password_var, show="*"),
+        )
 
         self.server_var = tk.StringVar(value=self.cfg.mt5_server)
-        add_adv_row(3, "MT5 server:", ttk.Entry(advanced_grid, textvariable=self.server_var))
+        add_adv_row(
+            3, "MT5 server:", ttk.Entry(advanced_grid, textvariable=self.server_var)
+        )
 
         self.risk_var = tk.DoubleVar(value=self.cfg.risk_percent)
-        add_adv_row(4, "Risk % per batch:", ttk.Entry(advanced_grid, textvariable=self.risk_var))
+        add_adv_row(
+            4, "Risk % per batch:", ttk.Entry(advanced_grid, textvariable=self.risk_var)
+        )
 
         self.daily_var = tk.DoubleVar(value=self.cfg.daily_stop_percent)
-        add_adv_row(5, "Daily stop %:", ttk.Entry(advanced_grid, textvariable=self.daily_var))
+        add_adv_row(
+            5, "Daily stop %:", ttk.Entry(advanced_grid, textvariable=self.daily_var)
+        )
 
         self.spread_var = tk.IntVar(value=self.cfg.max_spread_points)
-        add_adv_row(6, "Max spread (points):", ttk.Entry(advanced_grid, textvariable=self.spread_var))
+        add_adv_row(
+            6,
+            "Max spread (points):",
+            ttk.Entry(advanced_grid, textvariable=self.spread_var),
+        )
 
         self.magic_var = tk.IntVar(value=self.cfg.magic)
-        add_adv_row(7, "Magic number:", ttk.Entry(advanced_grid, textvariable=self.magic_var))
+        add_adv_row(
+            7, "Magic number:", ttk.Entry(advanced_grid, textvariable=self.magic_var)
+        )
 
         btns = ttk.Frame(frm)
         btns.pack(fill="x", pady=10)
@@ -157,13 +198,17 @@ class App:
         self.start_btn = ttk.Button(btns, text="Start", command=self.start)
         self.start_btn.pack(side="left", padx=5)
 
-        self.stop_btn = ttk.Button(btns, text="Stop", command=self.stop, state="disabled")
+        self.stop_btn = ttk.Button(
+            btns, text="Stop", command=self.stop, state="disabled"
+        )
         self.stop_btn.pack(side="left", padx=5)
 
         self.status_lbl = ttk.Label(frm, text="Status: idle")
         self.status_lbl.pack(anchor="w", pady=(10, 2))
 
-        self.metrics_lbl = ttk.Label(frm, text="Equity: - | Daily DD: - | Loss streak: -")
+        self.metrics_lbl = ttk.Label(
+            frm, text="Equity: - | Daily DD: - | Loss streak: -"
+        )
         self.metrics_lbl.pack(anchor="w")
 
         self.log_box = tk.Text(frm, height=18)
@@ -175,7 +220,9 @@ class App:
         self.cfg.symbol = self.symbol_var.get().strip()
         self.cfg.timeframe = self.tf_var.get().strip()
         self.cfg.terminal_path = self.term_var.get().strip()
-        self.cfg.mt5_login = int(self.login_var.get().strip()) if self.login_var.get().strip() else None
+        self.cfg.mt5_login = (
+            int(self.login_var.get().strip()) if self.login_var.get().strip() else None
+        )
         self.cfg.mt5_password = self.password_var.get()
         self.cfg.mt5_server = self.server_var.get().strip()
         self.cfg.paper_mode = bool(self.paper_var.get())
@@ -315,8 +362,12 @@ class App:
         try:
             if self.engine and self.engine.status.running:
                 st = self.engine.status
-                self.status_lbl.configure(text=f"Status: {self._human_status(st.last_msg)}")
-                self.metrics_lbl.configure(text=f"Equity: {st.equity:.2f} | Daily DD: {st.daily_dd*100:.2f}% | Loss streak: {st.consec_losses}")
+                self.status_lbl.configure(
+                    text=f"Status: {self._human_status(st.last_msg)}"
+                )
+                self.metrics_lbl.configure(
+                    text=f"Equity: {st.equity:.2f} | Daily DD: {st.daily_dd*100:.2f}% | Loss streak: {st.consec_losses}"
+                )
             elif self.engine and not self.engine.status.running:
                 self.status_lbl.configure(text="Status: Gestopt")
         except Exception:

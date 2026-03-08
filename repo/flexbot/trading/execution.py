@@ -6,10 +6,12 @@ from flexbot.mt5 import client
 from flexbot.trading.state import BatchState, save_state
 from flexbot.trading.risk import calc_lot
 
+
 @dataclass
 class ExecResult:
     ok: bool
     msg: str
+
 
 def _allowed_filling(symbol: str):
     info = mt5.symbol_info(symbol)
@@ -17,7 +19,10 @@ def _allowed_filling(symbol: str):
         return mt5.ORDER_FILLING_RETURN
     # Use whatever broker allows; prefer RETURN then IOC.
     # Some symbols only allow one mode.
-    return info.filling_mode if hasattr(info, "filling_mode") else mt5.ORDER_FILLING_RETURN
+    return (
+        info.filling_mode if hasattr(info, "filling_mode") else mt5.ORDER_FILLING_RETURN
+    )
+
 
 def _send(request: dict):
     logging.info(f"ORDER_SEND request={request}")
@@ -25,8 +30,11 @@ def _send(request: dict):
     if res is None:
         logging.error(f"ORDER_SEND result=None last_error={mt5.last_error()}")
         return None
-    logging.info(f"ORDER_SEND retcode={res.retcode} comment={res.comment} order={res.order} deal={res.deal}")
+    logging.info(
+        f"ORDER_SEND retcode={res.retcode} comment={res.comment} order={res.order} deal={res.deal}"
+    )
     return res
+
 
 def _fetch_position_ticket_by_comment(symbol: str, magic: int, comment: str) -> int:
     pos = client.positions(symbol=symbol, magic=magic)
@@ -35,8 +43,16 @@ def _fetch_position_ticket_by_comment(symbol: str, magic: int, comment: str) -> 
             return int(p.ticket)
     return 0
 
-def open_batch(symbol: str, magic: int, batch_id: str, is_long: bool,
-               sl: float, risk_percent: float, be_buf_points: int) -> tuple[BatchState, ExecResult]:
+
+def open_batch(
+    symbol: str,
+    magic: int,
+    batch_id: str,
+    is_long: bool,
+    sl: float,
+    risk_percent: float,
+    be_buf_points: int,
+) -> tuple[BatchState, ExecResult]:
     client.ensure_symbol(symbol)
     tick = client.get_tick(symbol)
     if tick is None:
@@ -100,11 +116,14 @@ def open_batch(symbol: str, magic: int, batch_id: str, is_long: bool,
         if res is None or res.retcode != mt5.TRADE_RETCODE_DONE:
             # try fallback filling modes if needed
             if res is not None:
-                logging.error(f"Order failed retcode={res.retcode} comment={res.comment}")
+                logging.error(
+                    f"Order failed retcode={res.retcode} comment={res.comment}"
+                )
             return BatchState(), ExecResult(False, f"order_failed_{i}")
 
     # Fetch position tickets (may appear shortly)
     import time
+
     time.sleep(0.5)
     t1 = _fetch_position_ticket_by_comment(symbol, magic, c1)
     t2 = _fetch_position_ticket_by_comment(symbol, magic, c2)
@@ -125,5 +144,7 @@ def open_batch(symbol: str, magic: int, batch_id: str, is_long: bool,
         be_applied=False,
     )
     save_state(state)
-    logging.info(f"BATCH_OPENED id={batch_id} long={is_long} entry={entry} sl={sl} lot={lot} tp1/2/3={tp1},{tp2},{tp3}")
+    logging.info(
+        f"BATCH_OPENED id={batch_id} long={is_long} entry={entry} sl={sl} lot={lot} tp1/2/3={tp1},{tp2},{tp3}"
+    )
     return state, ExecResult(True, "batch_opened")

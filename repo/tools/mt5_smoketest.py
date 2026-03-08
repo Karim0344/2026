@@ -18,8 +18,12 @@ def load_config(repo_root: Path) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="MT5 smoke test for FlexBot")
-    parser.add_argument("--symbol", default="XAUUSD", help="Symbol to verify tick stream")
-    parser.add_argument("--terminal-path", default="", help="Path to terminal64.exe (optional)")
+    parser.add_argument(
+        "--symbol", default="XAUUSD", help="Symbol to verify tick stream"
+    )
+    parser.add_argument(
+        "--terminal-path", default="", help="Path to terminal64.exe (optional)"
+    )
     parser.add_argument("--login", type=int, default=None, help="MT5 login id")
     parser.add_argument("--password", default="", help="MT5 password")
     parser.add_argument("--server", default="", help="MT5 server name")
@@ -59,12 +63,18 @@ def main() -> int:
         print(f"account_server: {getattr(account, 'server', 'N/A')}")
         print(f"symbol_requested: {symbol}")
         print(f"symbol_resolved: {resolved}")
-        print(f"tick_available: {bool(tick and getattr(tick, 'bid', 0) > 0 and getattr(tick, 'ask', 0) > 0)}")
+        print(
+            f"tick_available: {bool(tick and getattr(tick, 'bid', 0) > 0 and getattr(tick, 'ask', 0) > 0)}"
+        )
         if tick:
-            print(f"tick_bid_ask: {getattr(tick, 'bid', 0)} / {getattr(tick, 'ask', 0)}")
+            print(
+                f"tick_bid_ask: {getattr(tick, 'bid', 0)} / {getattr(tick, 'ask', 0)}"
+            )
         return 0
     except ModuleNotFoundError as exc:
-        print(f"ERROR: {exc}. Install MetaTrader5 package in the same Python environment.")
+        print(
+            f"ERROR: {exc}. Install MetaTrader5 package in the same Python environment."
+        )
         return 1
     except Exception as exc:
         print(f"ERROR: {exc}")
