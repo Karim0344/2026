@@ -1,8 +1,8 @@
 {
   "terminal_path": "",
   "auto_resolve_symbol": true,
-  "symbol": "",
-  "paper_mode": false,
+  "symbol": "XAUUSD",
+  "paper_mode": true,
   "mt5_login": null,
   "mt5_password": "",
   "mt5_server": ""
