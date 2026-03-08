@@ -36,6 +36,8 @@ class TradingEngine:
         self.status = EngineStatus()
         self._last_diag_err_ts = 0.0
         self._last_market_closed_ts = 0.0
+        self._entry_thread: threading.Thread | None = None
+        self._manage_thread: threading.Thread | None = None
 
     def start(self):
         try:
@@ -50,20 +52,32 @@ class TradingEngine:
             self._reset_day_if_needed(force=True)
 
             self.stop_event.clear()
-            threading.Thread(target=self._entry_loop, daemon=True, name="entry-loop").start()
-            threading.Thread(target=self._manage_loop, daemon=True, name="manage-loop").start()
+            self._entry_thread = threading.Thread(target=self._entry_loop, daemon=True, name="entry-loop")
+            self._manage_thread = threading.Thread(target=self._manage_loop, daemon=True, name="manage-loop")
+            self._entry_thread.start()
+            self._manage_thread.start()
             self.status.running = True
             logging.info("ENGINE_STARTED")
         except Exception:
+            self.stop_event.set()
+            self._join_worker_threads(timeout=1.0)
             self.status.running = False
             client.shutdown()
             raise
 
     def stop(self):
         self.stop_event.set()
+        self._join_worker_threads(timeout=2.0)
         self.status.running = False
         client.shutdown()
         logging.info("ENGINE_STOPPED")
+
+    def _join_worker_threads(self, timeout: float):
+        for attr in ("_entry_thread", "_manage_thread"):
+            t = getattr(self, attr)
+            if t is not None and t.is_alive() and t is not threading.current_thread():
+                t.join(timeout=timeout)
+            setattr(self, attr, None)
 
     def _reset_day_if_needed(self, force: bool = False):
         now = client.broker_datetime_utc(self.cfg.symbol)
