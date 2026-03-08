@@ -214,7 +214,9 @@ class App:
     def _human_status(raw_status: str) -> str:
         status = (raw_status or "").strip()
         low = status.lower()
-        if low in {"idle", "engine started", "opened"}:
+        if low == "idle":
+            return "Inactief"
+        if low in {"engine started"}:
             return "Verbonden met MT5"
         if low in {"paper_signal_logged"}:
             return "Paper mode actief"
@@ -225,7 +227,7 @@ class App:
         if low.startswith("waiting") or "no_signal" in low or "bar" in low:
             return "Wachten op marktdata"
         if low.startswith("opened"):
-            return "Verbonden met MT5"
+            return "Trade geopend"
         return "Wachten op marktdata"
 
     def _set_busy(self, busy: bool):
@@ -236,6 +238,8 @@ class App:
 
     def start(self):
         if self._busy:
+            return
+        if self.engine and self.engine.status.running:
             return
         self._set_busy(True)
         self._append_ui_log("Starting engine...")
@@ -249,6 +253,7 @@ class App:
 
                 def _ok():
                     self._set_busy(False)
+                    self.start_btn.configure(state="disabled")
                     self.stop_btn.configure(state="normal")
                     self._append_ui_log("ENGINE started")
 
@@ -279,16 +284,20 @@ class App:
         logging.info("GUI_STOP_CLICK")
 
         def _worker():
+            stopped_ok = False
             try:
                 self.engine.stop()
                 msg = "ENGINE stopped"
+                stopped_ok = True
             except Exception as e:
                 logging.exception("STOP_FAILED")
                 msg = f"STOP_FAILED: {e}"
 
-            def _done(final_msg=msg):
+            def _done(final_msg=msg, stop_succeeded=stopped_ok):
                 self._set_busy(False)
-                self.start_btn.configure(state="normal")
+                if stop_succeeded:
+                    self.start_btn.configure(state="normal")
+                    self.status_lbl.configure(text="Status: Gestopt")
                 self.stop_btn.configure(state="disabled")
                 self._append_ui_log(final_msg)
 
@@ -308,6 +317,8 @@ class App:
                 st = self.engine.status
                 self.status_lbl.configure(text=f"Status: {self._human_status(st.last_msg)}")
                 self.metrics_lbl.configure(text=f"Equity: {st.equity:.2f} | Daily DD: {st.daily_dd*100:.2f}% | Loss streak: {st.consec_losses}")
+            elif self.engine and not self.engine.status.running:
+                self.status_lbl.configure(text="Status: Gestopt")
         except Exception:
             pass
         self.root.after(500, self._ui_loop)
