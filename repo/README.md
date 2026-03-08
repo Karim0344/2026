@@ -37,3 +37,12 @@ Troubleshooting MT5 connection
 - IPC timeout errors are retried automatically. If you still fail, close duplicate terminals and relaunch MT5 as the same OS user as the bot.
 - Market-closed / no-tick warnings are throttled to reduce log spam.
 - Run `python tools/mt5_smoketest.py --symbol XAUUSD` to print terminal/account/server details and tick availability for the selected symbol.
+
+Paper test checklist
+- Open de juiste broker MT5 terminal.
+- Log eerst in op het juiste account.
+- Houd MT5 open tijdens de hele validatie.
+- Run de smoketest: `python tools/mt5_smoketest.py --symbol XAUUSD`.
+- Houd `paper_mode=true` voor de eerste validatie.
+- Zet `paper_mode` pas uit na stabiele paper testing.
+

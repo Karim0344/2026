@@ -2,10 +2,12 @@ import math
 from dataclasses import dataclass
 import MetaTrader5 as mt5
 
+
 @dataclass
 class LotCalcResult:
     lot: float
     loss_per_lot: float
+
 
 def calc_lot(symbol: str, risk_money: float, entry: float, sl: float) -> LotCalcResult:
     info = mt5.symbol_info(symbol)

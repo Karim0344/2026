@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 from flexbot.mt5 import client
 
+
 @dataclass
 class TradeIntent:
     valid: bool
@@ -14,8 +15,10 @@ class TradeIntent:
     batch_id: str = ""
     reason: str = ""
 
+
 def _sma(series: pd.Series, period: int) -> pd.Series:
     return series.rolling(period).mean()
+
 
 def _rsi(close: pd.Series, period: int) -> pd.Series:
     delta = close.diff()
@@ -26,30 +29,32 @@ def _rsi(close: pd.Series, period: int) -> pd.Series:
     rs = avg_gain / avg_loss
     return 100.0 - (100.0 / (1.0 + rs))
 
+
 def _atr(df: pd.DataFrame, period: int) -> pd.Series:
     high = df["high"]
     low = df["low"]
     close = df["close"]
     prev_close = close.shift(1)
-    tr = pd.concat([
-        (high - low),
-        (high - prev_close).abs(),
-        (low - prev_close).abs()
-    ], axis=1).max(axis=1)
+    tr = pd.concat(
+        [(high - low), (high - prev_close).abs(), (low - prev_close).abs()], axis=1
+    ).max(axis=1)
     return tr.rolling(period).mean()
 
-def get_intent(symbol: str,
-               timeframe: str,
-               ma_fast: int,
-               ma_trend: int,
-               rsi_period: int,
-               atr_period: int,
-               pullback_atr_mult: float,
-               rsi_long_max: float,
-               rsi_short_min: float,
-               swing_lookback: int,
-               sl_atr_buffer_mult: float,
-               last_closed_bar_time: int) -> TradeIntent:
+
+def get_intent(
+    symbol: str,
+    timeframe: str,
+    ma_fast: int,
+    ma_trend: int,
+    rsi_period: int,
+    atr_period: int,
+    pullback_atr_mult: float,
+    rsi_long_max: float,
+    rsi_short_min: float,
+    swing_lookback: int,
+    sl_atr_buffer_mult: float,
+    last_closed_bar_time: int,
+) -> TradeIntent:
     # Need enough bars
     bars = max(ma_trend + 5, swing_lookback + 5, atr_period + 5, rsi_period + 5, 300)
     rates = client.copy_rates(symbol, timeframe, bars)
@@ -85,23 +90,45 @@ def get_intent(symbol: str,
     low1 = float(c1["low"])
 
     # mechanical SL from last N lows/highs on closed bars
-    look = df.iloc[-(swing_lookback+1):-1]  # exclude forming bar
+    look = df.iloc[-(swing_lookback + 1) : -1]  # exclude forming bar
     lowest_low = float(look["low"].min())
     highest_high = float(look["high"].max())
 
-    long_ok = (close0 > ma200) and (abs(close0 - ma50) <= pull_dist) and (rsi < rsi_long_max) and (close0 > high1)
-    short_ok = (close0 < ma200) and (abs(close0 - ma50) <= pull_dist) and (rsi > rsi_short_min) and (close0 < low1)
+    long_ok = (
+        (close0 > ma200)
+        and (abs(close0 - ma50) <= pull_dist)
+        and (rsi < rsi_long_max)
+        and (close0 > high1)
+    )
+    short_ok = (
+        (close0 < ma200)
+        and (abs(close0 - ma50) <= pull_dist)
+        and (rsi > rsi_short_min)
+        and (close0 < low1)
+    )
 
     bar_time = int(c0["time"])
     batch_id = f"{symbol}_{timeframe}_{bar_time}"
 
     if long_ok:
         sl = lowest_low - (sl_atr_buffer_mult * atr)
-        return TradeIntent(valid=True, is_long=True, sl=float(sl), entry=0.0, batch_id=batch_id,
-                           reason="trend_pullback_long")
+        return TradeIntent(
+            valid=True,
+            is_long=True,
+            sl=float(sl),
+            entry=0.0,
+            batch_id=batch_id,
+            reason="trend_pullback_long",
+        )
     if short_ok:
         sl = highest_high + (sl_atr_buffer_mult * atr)
-        return TradeIntent(valid=True, is_long=False, sl=float(sl), entry=0.0, batch_id=batch_id,
-                           reason="trend_pullback_short")
+        return TradeIntent(
+            valid=True,
+            is_long=False,
+            sl=float(sl),
+            entry=0.0,
+            batch_id=batch_id,
+            reason="trend_pullback_short",
+        )
 
     return TradeIntent(valid=False, reason="no_signal")

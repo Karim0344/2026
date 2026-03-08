@@ -3,6 +3,7 @@ from typing import Optional
 import json
 import os
 
+
 @dataclass
 class BatchState:
     batch_id: str = ""
@@ -18,6 +19,7 @@ class BatchState:
     pos3_ticket: int = 0
     be_applied: bool = False
 
+
 def load_state(path: str = "state.json") -> BatchState:
     if not os.path.exists(path):
         return BatchState()
@@ -28,9 +30,11 @@ def load_state(path: str = "state.json") -> BatchState:
     except Exception:
         return BatchState()
 
+
 def save_state(state: BatchState, path: str = "state.json") -> None:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(asdict(state), f, ensure_ascii=False, indent=2)
+
 
 def clear_state(path: str = "state.json") -> None:
     if os.path.exists(path):
