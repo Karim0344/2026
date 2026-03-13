@@ -1,1 +1,3 @@
 *.py text eol=lf
+repo/flexbot/trading/engine.py text eol=lf
+repo/flexbot/gui/app.py text eol=lf
