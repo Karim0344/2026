@@ -39,6 +39,8 @@ class TradingEngine:
         self.status = EngineStatus()
         self._last_diag_err_ts = 0.0
         self._last_market_closed_ts = 0.0
+        self._last_heartbeat = 0.0
+        self._last_strategy_reason: str | None = None
         self._entry_thread: threading.Thread | None = None
         self._manage_thread: threading.Thread | None = None
 
@@ -163,76 +165,93 @@ class TradingEngine:
             return False
         return True
 
+    def _log_strategy_heartbeat(self):
+        now = time.time()
+        if now - self._last_heartbeat > 30:
+            self._last_heartbeat = now
+            logging.info(
+                "HEARTBEAT symbol=%s tf=%s last_msg=%s equity=%.2f",
+                self.cfg.symbol,
+                self.cfg.timeframe,
+                self.status.last_msg,
+                self.status.equity,
+            )
+
+    def _log_strategy_reason_change(self, reason: str):
+        if reason != self._last_strategy_reason:
+            self._last_strategy_reason = reason
+            logging.info("STATE_CHANGE reason=%s", reason)
+
     def _entry_loop(self):
         while not self.stop_event.is_set():
             try:
-                now = time.time()
-                if not hasattr(self, "_last_heartbeat"):
-                    self._last_heartbeat = 0.0
-                if now - self._last_heartbeat > 30:
-                    self._last_heartbeat = now
-                    logging.info(
-                        "HEARTBEAT symbol=%s tf=%s last_msg=%s equity=%.2f",
-                        self.cfg.symbol,
-                        self.cfg.timeframe,
-                        self.status.last_msg,
-                        self.status.equity,
-                    )
                 self._update_guards()
-                if self._can_enter():
-                    # detect closed bar time
-                    rates = client.copy_rates(self.cfg.symbol, self.cfg.timeframe, 5)
-                    if rates is not None and len(rates) >= 3:
-                        closed_bar_time = int(rates[-2]["time"])
+                if not self._can_enter():
+                    self.status.last_msg = "guards_blocked"
+                    self._log_strategy_heartbeat()
+                    self.stop_event.wait(self.cfg.entry_check_seconds)
+                    continue
+
+                rates = client.copy_rates(self.cfg.symbol, self.cfg.timeframe, 5)
+                if rates is None or len(rates) < 3:
+                    self.status.last_msg = "no_rates"
+                    self._log_strategy_heartbeat()
+                    self.stop_event.wait(self.cfg.entry_check_seconds)
+                    continue
+
+                closed_bar_time = int(rates[-2]["time"])
+                if not closed_bar_time:
+                    self.status.last_msg = "no_rates"
+                    self._log_strategy_heartbeat()
+                    self.stop_event.wait(self.cfg.entry_check_seconds)
+                    continue
+
+                if closed_bar_time == self.last_closed_bar_time:
+                    self.status.last_msg = "same_bar"
+                    self._log_strategy_heartbeat()
+                    self.stop_event.wait(self.cfg.entry_check_seconds)
+                    continue
+
+                logging.info(
+                    "NEW_BAR symbol=%s tf=%s closed_bar_time=%s",
+                    self.cfg.symbol,
+                    self.cfg.timeframe,
+                    closed_bar_time,
+                )
+
+                intent = get_intent(
+                    symbol=self.cfg.symbol,
+                    timeframe=self.cfg.timeframe,
+                    ma_fast=self.cfg.ma_fast,
+                    ma_trend=self.cfg.ma_trend,
+                    rsi_period=self.cfg.rsi_period,
+                    atr_period=self.cfg.atr_period,
+                    pullback_atr_mult=self.cfg.pullback_atr_mult,
+                    rsi_long_max=self.cfg.rsi_long_max,
+                    rsi_short_min=self.cfg.rsi_short_min,
+                    swing_lookback=self.cfg.swing_lookback,
+                    sl_atr_buffer_mult=self.cfg.sl_atr_buffer_mult,
+                    last_closed_bar_time=self.last_closed_bar_time,
+                )
+
+                # Always mark current closed bar as processed, even when no signal.
+                self.last_closed_bar_time = closed_bar_time
+                self.status.last_msg = intent.reason
+                self._log_strategy_reason_change(intent.reason)
+
+                if intent.valid and intent.batch_id != self.last_batch_id:
+                    self.last_batch_id = intent.batch_id
+                    if self.cfg.paper_mode:
                         logging.info(
-                            "BAR_EVAL symbol=%s tf=%s closed_bar_time=%s bars=%s",
-                            self.cfg.symbol,
-                            self.cfg.timeframe,
-                            closed_bar_time,
-                            len(rates),
+                            "PAPER_SIGNAL batch_id=%s side=%s sl=%.5f reason=%s",
+                            intent.batch_id,
+                            "BUY" if intent.is_long else "SELL",
+                            intent.sl,
+                            intent.reason,
                         )
+                        self.status.last_msg = "paper_signal_logged"
+                        self._log_strategy_reason_change(self.status.last_msg)
                     else:
-                        logging.warning("NO_RATES_DATA")
-                        closed_bar_time = 0
-
-                    intent = get_intent(
-                        symbol=self.cfg.symbol,
-                        timeframe=self.cfg.timeframe,
-                        ma_fast=self.cfg.ma_fast,
-                        ma_trend=self.cfg.ma_trend,
-                        rsi_period=self.cfg.rsi_period,
-                        atr_period=self.cfg.atr_period,
-                        pullback_atr_mult=self.cfg.pullback_atr_mult,
-                        rsi_long_max=self.cfg.rsi_long_max,
-                        rsi_short_min=self.cfg.rsi_short_min,
-                        swing_lookback=self.cfg.swing_lookback,
-                        sl_atr_buffer_mult=self.cfg.sl_atr_buffer_mult,
-                        last_closed_bar_time=self.last_closed_bar_time,
-                    )
-                    logging.info(
-                        "EVAL reason=%s valid=%s batch_id=%s",
-                        intent.reason,
-                        intent.valid,
-                        intent.batch_id,
-                    )
-                    if (
-                        intent.valid
-                        and intent.batch_id != self.last_batch_id
-                        and closed_bar_time
-                    ):
-                        if self.cfg.paper_mode:
-                            logging.info(
-                                f"PAPER_SIGNAL batch_id={intent.batch_id} side={'BUY' if intent.is_long else 'SELL'} sl={intent.sl:.5f}"
-                            )
-                            self.last_batch_id = intent.batch_id
-                            self.last_closed_bar_time = closed_bar_time
-                            self.status.last_msg = "paper_signal_logged"
-                            continue
-                        # record this bar time to prevent repeated
-                        self.last_closed_bar_time = closed_bar_time
-                        self.last_batch_id = intent.batch_id
-
-                        # open batch
                         st, res = open_batch(
                             symbol=self.cfg.symbol,
                             magic=self.cfg.magic,
@@ -245,13 +264,13 @@ class TradingEngine:
                         if res.ok:
                             self.state = st
                             self.status.last_msg = f"Opened {intent.batch_id}"
+                            self._log_strategy_reason_change(self.status.last_msg)
                         else:
                             self.status.last_msg = f"Entry failed: {res.msg}"
+                            self._log_strategy_reason_change(self.status.last_msg)
                             logging.error(self.status.last_msg)
-                    else:
-                        self.status.last_msg = intent.reason
-                else:
-                    self.status.last_msg = "guards_blocked"
+
+                self._log_strategy_heartbeat()
             except Exception as e:
                 logging.exception(f"ENTRY_LOOP_ERROR: {e}")
                 self.status.last_msg = f"error: {e}"
