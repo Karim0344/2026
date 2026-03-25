@@ -1,5 +1,6 @@
 import logging
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import MetaTrader5 as mt5
@@ -165,13 +166,33 @@ class TradingEngine:
     def _entry_loop(self):
         while not self.stop_event.is_set():
             try:
+                now = time.time()
+                if not hasattr(self, "_last_heartbeat"):
+                    self._last_heartbeat = 0.0
+                if now - self._last_heartbeat > 30:
+                    self._last_heartbeat = now
+                    logging.info(
+                        "HEARTBEAT symbol=%s tf=%s last_msg=%s equity=%.2f",
+                        self.cfg.symbol,
+                        self.cfg.timeframe,
+                        self.status.last_msg,
+                        self.status.equity,
+                    )
                 self._update_guards()
                 if self._can_enter():
                     # detect closed bar time
                     rates = client.copy_rates(self.cfg.symbol, self.cfg.timeframe, 5)
                     if rates is not None and len(rates) >= 3:
                         closed_bar_time = int(rates[-2]["time"])
+                        logging.info(
+                            "BAR_EVAL symbol=%s tf=%s closed_bar_time=%s bars=%s",
+                            self.cfg.symbol,
+                            self.cfg.timeframe,
+                            closed_bar_time,
+                            len(rates),
+                        )
                     else:
+                        logging.warning("NO_RATES_DATA")
                         closed_bar_time = 0
 
                     intent = get_intent(
@@ -187,6 +208,12 @@ class TradingEngine:
                         swing_lookback=self.cfg.swing_lookback,
                         sl_atr_buffer_mult=self.cfg.sl_atr_buffer_mult,
                         last_closed_bar_time=self.last_closed_bar_time,
+                    )
+                    logging.info(
+                        "EVAL reason=%s valid=%s batch_id=%s",
+                        intent.reason,
+                        intent.valid,
+                        intent.batch_id,
                     )
                     if (
                         intent.valid
