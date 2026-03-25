@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import queue
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -8,6 +9,15 @@ from tkinter import filedialog, messagebox, ttk
 from flexbot.core.config import BotConfig
 from flexbot.core.logging_util import setup_logger
 from flexbot.trading.engine import TradingEngine
+
+
+class TkLogHandler(logging.Handler):
+    def __init__(self, q: queue.Queue):
+        super().__init__()
+        self.q = q
+
+    def emit(self, record: logging.LogRecord):
+        self.q.put(self.format(record))
 
 
 def _load_json_config() -> dict:
@@ -39,6 +49,10 @@ class App:
         self.root.geometry("760x620")
 
         setup_logger("flexbot.log")
+        self.log_queue: queue.Queue[str] = queue.Queue()
+        handler = TkLogHandler(self.log_queue)
+        handler.setFormatter(logging.Formatter("%(asctime)s | %(message)s"))
+        logging.getLogger().addHandler(handler)
         logging.info("APP_START")
 
         self.cfg = BotConfig()
@@ -358,8 +372,17 @@ class App:
         self.log_box.see("end")
         self.log_box.configure(state="disabled")
 
+    def _drain_logs(self):
+        try:
+            while True:
+                msg = self.log_queue.get_nowait()
+                self._append_ui_log(msg)
+        except queue.Empty:
+            pass
+
     def _ui_loop(self):
         try:
+            self._drain_logs()
             if self.engine and self.engine.status.running:
                 st = self.engine.status
                 self.status_lbl.configure(
