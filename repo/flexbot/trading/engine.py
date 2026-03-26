@@ -20,6 +20,9 @@ class EngineStatus:
     equity: float = 0.0
     daily_dd: float = 0.0
     consec_losses: int = 0
+    loop_state: str = "idle"
+    last_eval_reason: str = "none"
+    last_eval_bar_time: int = 0
 
 
 class TradingEngine:
@@ -170,10 +173,11 @@ class TradingEngine:
         if now - self._last_heartbeat > 30:
             self._last_heartbeat = now
             logging.info(
-                "HEARTBEAT symbol=%s tf=%s last_msg=%s equity=%.2f",
+                "HEARTBEAT symbol=%s tf=%s loop_state=%s last_eval_reason=%s equity=%.2f",
                 self.cfg.symbol,
                 self.cfg.timeframe,
-                self.status.last_msg,
+                self.status.loop_state,
+                self.status.last_eval_reason,
                 self.status.equity,
             )
 
@@ -187,31 +191,32 @@ class TradingEngine:
             try:
                 self._update_guards()
                 if not self._can_enter():
-                    self.status.last_msg = "guards_blocked"
+                    self.status.loop_state = "guards_blocked"
                     self._log_strategy_heartbeat()
                     self.stop_event.wait(self.cfg.entry_check_seconds)
                     continue
 
                 rates = client.copy_rates(self.cfg.symbol, self.cfg.timeframe, 5)
                 if rates is None or len(rates) < 3:
-                    self.status.last_msg = "no_rates"
+                    self.status.loop_state = "no_rates"
                     self._log_strategy_heartbeat()
                     self.stop_event.wait(self.cfg.entry_check_seconds)
                     continue
 
                 closed_bar_time = int(rates[-2]["time"])
                 if not closed_bar_time:
-                    self.status.last_msg = "no_rates"
+                    self.status.loop_state = "no_rates"
                     self._log_strategy_heartbeat()
                     self.stop_event.wait(self.cfg.entry_check_seconds)
                     continue
 
                 if closed_bar_time == self.last_closed_bar_time:
-                    self.status.last_msg = "same_bar"
+                    self.status.loop_state = "same_bar"
                     self._log_strategy_heartbeat()
                     self.stop_event.wait(self.cfg.entry_check_seconds)
                     continue
 
+                self.status.loop_state = "new_bar"
                 logging.info(
                     "NEW_BAR symbol=%s tf=%s closed_bar_time=%s",
                     self.cfg.symbol,
@@ -236,7 +241,18 @@ class TradingEngine:
 
                 # Always mark current closed bar as processed, even when no signal.
                 self.last_closed_bar_time = closed_bar_time
+                self.status.last_eval_bar_time = closed_bar_time
+                self.status.last_eval_reason = intent.reason
                 self.status.last_msg = intent.reason
+                logging.info(
+                    "BAR_RESULT symbol=%s tf=%s closed_bar_time=%s reason=%s valid=%s batch_id=%s",
+                    self.cfg.symbol,
+                    self.cfg.timeframe,
+                    closed_bar_time,
+                    intent.reason,
+                    intent.valid,
+                    intent.batch_id,
+                )
                 self._log_strategy_reason_change(intent.reason)
 
                 if intent.valid and intent.batch_id != self.last_batch_id:
