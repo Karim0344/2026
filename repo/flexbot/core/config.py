@@ -26,11 +26,12 @@ class BotConfig:
     ma_trend: int = 200
     rsi_period: int = 14
     atr_period: int = 14
-    pullback_atr_mult: float = 0.5
-    rsi_long_max: float = 40.0
-    rsi_short_min: float = 60.0
+    pullback_atr_mult: float = 1.0
+    rsi_long_max: float = 60.0
+    rsi_short_min: float = 40.0
     swing_lookback: int = 10
     sl_atr_buffer_mult: float = 0.2
+    require_breakout: bool = False
 
     # Management
     be_buffer_points: int = 2
