@@ -65,6 +65,8 @@ class App:
             self.cfg.symbol = str(jc.get("symbol"))
         if jc.get("paper_mode") is not None:
             self.cfg.paper_mode = bool(jc.get("paper_mode"))
+        if jc.get("require_breakout") is not None:
+            self.cfg.require_breakout = bool(jc.get("require_breakout"))
         if jc.get("timeframe"):
             self.cfg.timeframe = str(jc.get("timeframe"))
         if jc.get("mt5_login"):
@@ -205,6 +207,14 @@ class App:
         add_adv_row(
             7, "Magic number:", ttk.Entry(advanced_grid, textvariable=self.magic_var)
         )
+        self.breakout_var = tk.BooleanVar(
+            value=bool(getattr(self.cfg, "require_breakout", False))
+        )
+        add_adv_row(
+            8,
+            "Require breakout:",
+            ttk.Checkbutton(advanced_grid, variable=self.breakout_var),
+        )
 
         btns = ttk.Frame(frm)
         btns.pack(fill="x", pady=10)
@@ -244,6 +254,7 @@ class App:
         self.cfg.daily_stop_percent = float(self.daily_var.get())
         self.cfg.max_spread_points = int(self.spread_var.get())
         self.cfg.magic = int(self.magic_var.get())
+        self.cfg.require_breakout = bool(self.breakout_var.get())
 
         _save_json_config(
             {
@@ -259,6 +270,7 @@ class App:
                 "daily_stop_percent": self.cfg.daily_stop_percent,
                 "max_spread_points": self.cfg.max_spread_points,
                 "magic": self.cfg.magic,
+                "require_breakout": self.cfg.require_breakout,
             }
         )
 
@@ -386,13 +398,18 @@ class App:
             if self.engine and self.engine.status.running:
                 st = self.engine.status
                 self.status_lbl.configure(
-                    text=f"Status: {self._human_status(st.last_msg)}"
+                    text=(
+                        f"Status: loop={st.loop_state} | "
+                        f"reason={st.last_eval_reason} | "
+                        f"bar={st.last_eval_bar_time}"
+                    )
                 )
                 self.metrics_lbl.configure(
                     text=(
                         f"Equity: {st.equity:.2f} | "
                         f"Daily DD: {st.daily_dd * 100:.2f}% | "
-                        f"Loss streak: {st.consec_losses}"
+                        f"Loss streak: {st.consec_losses} | "
+                        f"Signals: {st.signal_count}"
                     )
                 )
             elif self.engine and not self.engine.status.running:

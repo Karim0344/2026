@@ -23,6 +23,7 @@ class EngineStatus:
     loop_state: str = "idle"
     last_eval_reason: str = "none"
     last_eval_bar_time: int = 0
+    signal_count: int = 0
 
 
 class TradingEngine:
@@ -38,6 +39,7 @@ class TradingEngine:
         self.current_day = None
         self.consec_losses = 0
         self.trading_disabled_today = False
+        self.signal_count = 0
 
         self.status = EngineStatus()
         self._last_diag_err_ts = 0.0
@@ -110,6 +112,7 @@ class TradingEngine:
             self.equity_day_start = client.account_equity()
             self.consec_losses = 0
             self.trading_disabled_today = False
+            self.signal_count = 0
             logging.info(f"NEW_DAY day={day} equity_start={self.equity_day_start}")
 
     def _update_guards(self):
@@ -123,6 +126,7 @@ class TradingEngine:
         self.status.equity = eq
         self.status.daily_dd = dd
         self.status.consec_losses = self.consec_losses
+        self.status.signal_count = self.signal_count
 
         if dd <= -(self.cfg.daily_stop_percent / 100.0):
             if not self.trading_disabled_today:
@@ -173,11 +177,12 @@ class TradingEngine:
         if now - self._last_heartbeat > 30:
             self._last_heartbeat = now
             logging.info(
-                "HEARTBEAT symbol=%s tf=%s loop_state=%s last_eval_reason=%s equity=%.2f",
+                "HEARTBEAT symbol=%s tf=%s loop_state=%s last_eval_reason=%s signal_count=%s equity=%.2f",
                 self.cfg.symbol,
                 self.cfg.timeframe,
                 self.status.loop_state,
                 self.status.last_eval_reason,
+                self.status.signal_count,
                 self.status.equity,
             )
 
@@ -237,6 +242,7 @@ class TradingEngine:
                     swing_lookback=self.cfg.swing_lookback,
                     sl_atr_buffer_mult=self.cfg.sl_atr_buffer_mult,
                     last_closed_bar_time=self.last_closed_bar_time,
+                    require_breakout=self.cfg.require_breakout,
                 )
 
                 # Always mark current closed bar as processed, even when no signal.
@@ -253,9 +259,14 @@ class TradingEngine:
                     intent.valid,
                     intent.batch_id,
                 )
+                if intent.debug:
+                    logging.info("INTENT_DEBUG %s", intent.debug)
                 self._log_strategy_reason_change(intent.reason)
 
                 if intent.valid and intent.batch_id != self.last_batch_id:
+                    self.signal_count += 1
+                    self.status.signal_count = self.signal_count
+                    logging.info("SIGNAL_COUNT=%s day=%s", self.signal_count, self.current_day)
                     self.last_batch_id = intent.batch_id
                     if self.cfg.paper_mode:
                         logging.info(
