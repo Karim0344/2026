@@ -236,6 +236,7 @@ class TradingEngine:
                     rsi_short_min=self.cfg.rsi_short_min,
                     swing_lookback=self.cfg.swing_lookback,
                     sl_atr_buffer_mult=self.cfg.sl_atr_buffer_mult,
+                    require_breakout=self.cfg.require_breakout,
                     last_closed_bar_time=self.last_closed_bar_time,
                 )
 

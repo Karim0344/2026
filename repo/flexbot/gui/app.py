@@ -81,6 +81,8 @@ class App:
             self.cfg.max_spread_points = int(jc.get("max_spread_points"))
         if jc.get("magic") is not None:
             self.cfg.magic = int(jc.get("magic"))
+        if jc.get("require_breakout") is not None:
+            self.cfg.require_breakout = bool(jc.get("require_breakout"))
         self.engine: TradingEngine | None = None
         self._busy = False
         self.advanced_visible = False
@@ -259,6 +261,7 @@ class App:
                 "daily_stop_percent": self.cfg.daily_stop_percent,
                 "max_spread_points": self.cfg.max_spread_points,
                 "magic": self.cfg.magic,
+                "require_breakout": self.cfg.require_breakout,
             }
         )
 
@@ -290,6 +293,18 @@ class App:
         if low.startswith("opened"):
             return "Trade geopend"
         return "Wachten op marktdata"
+
+    def _format_engine_status(self, st) -> str:
+        loop_state = (st.loop_state or "idle").strip()
+        reason = (st.last_eval_reason or "none").strip()
+        bar_time = int(st.last_eval_bar_time or 0)
+        bar_txt = f" | bar={bar_time}" if bar_time else ""
+        return (
+            f"Status: {self._human_status(loop_state)}"
+            f" | loop={loop_state}"
+            f" | reason={reason}"
+            f"{bar_txt}"
+        )
 
     def _set_busy(self, busy: bool):
         self._busy = busy
@@ -385,9 +400,7 @@ class App:
             self._drain_logs()
             if self.engine and self.engine.status.running:
                 st = self.engine.status
-                self.status_lbl.configure(
-                    text=f"Status: {self._human_status(st.last_msg)}"
-                )
+                self.status_lbl.configure(text=self._format_engine_status(st))
                 self.metrics_lbl.configure(
                     text=(
                         f"Equity: {st.equity:.2f} | "

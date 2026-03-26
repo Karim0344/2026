@@ -53,6 +53,7 @@ def get_intent(
     rsi_short_min: float,
     swing_lookback: int,
     sl_atr_buffer_mult: float,
+    require_breakout: bool,
     last_closed_bar_time: int,
 ) -> TradeIntent:
     # Need enough bars
@@ -94,17 +95,51 @@ def get_intent(
     lowest_low = float(look["low"].min())
     highest_high = float(look["high"].max())
 
+    dist_ma = abs(close0 - ma50)
+    trend_ok_long = close0 > ma200
+    pullback_ok_long = dist_ma <= pull_dist
+    rsi_ok_long = rsi < rsi_long_max
+    breakout_ok_long = close0 > high1
     long_ok = (
-        (close0 > ma200)
-        and (abs(close0 - ma50) <= pull_dist)
-        and (rsi < rsi_long_max)
-        and (close0 > high1)
+        trend_ok_long
+        and pullback_ok_long
+        and rsi_ok_long
+        and (breakout_ok_long or not require_breakout)
     )
+
+    trend_ok_short = close0 < ma200
+    pullback_ok_short = dist_ma <= pull_dist
+    rsi_ok_short = rsi > rsi_short_min
+    breakout_ok_short = close0 < low1
     short_ok = (
-        (close0 < ma200)
-        and (abs(close0 - ma50) <= pull_dist)
-        and (rsi > rsi_short_min)
-        and (close0 < low1)
+        trend_ok_short
+        and pullback_ok_short
+        and rsi_ok_short
+        and (breakout_ok_short or not require_breakout)
+    )
+
+    logging.info(
+        "BAR_DEBUG symbol=%s tf=%s close=%.5f ma_fast=%.5f ma_trend=%.5f rsi=%.2f atr=%.5f dist_ma=%.5f pull_dist=%.5f high1=%.5f low1=%.5f trend_ok_long=%s pullback_ok_long=%s rsi_ok_long=%s breakout_ok_long=%s trend_ok_short=%s pullback_ok_short=%s rsi_ok_short=%s breakout_ok_short=%s require_breakout=%s",
+        symbol,
+        timeframe,
+        close0,
+        ma50,
+        ma200,
+        rsi,
+        atr,
+        dist_ma,
+        pull_dist,
+        high1,
+        low1,
+        trend_ok_long,
+        pullback_ok_long,
+        rsi_ok_long,
+        breakout_ok_long,
+        trend_ok_short,
+        pullback_ok_short,
+        rsi_ok_short,
+        breakout_ok_short,
+        require_breakout,
     )
 
     bar_time = int(c0["time"])
@@ -131,4 +166,30 @@ def get_intent(
             reason="trend_pullback_short",
         )
 
+    if not trend_ok_long and not trend_ok_short:
+        return TradeIntent(valid=False, reason="trend_fail")
+    if trend_ok_long and not pullback_ok_long:
+        return TradeIntent(valid=False, reason="pullback_fail_long")
+    if trend_ok_long and pullback_ok_long and not rsi_ok_long:
+        return TradeIntent(valid=False, reason="rsi_fail_long")
+    if (
+        trend_ok_long
+        and pullback_ok_long
+        and rsi_ok_long
+        and require_breakout
+        and not breakout_ok_long
+    ):
+        return TradeIntent(valid=False, reason="breakout_fail_long")
+    if trend_ok_short and not pullback_ok_short:
+        return TradeIntent(valid=False, reason="pullback_fail_short")
+    if trend_ok_short and pullback_ok_short and not rsi_ok_short:
+        return TradeIntent(valid=False, reason="rsi_fail_short")
+    if (
+        trend_ok_short
+        and pullback_ok_short
+        and rsi_ok_short
+        and require_breakout
+        and not breakout_ok_short
+    ):
+        return TradeIntent(valid=False, reason="breakout_fail_short")
     return TradeIntent(valid=False, reason="no_signal")
