@@ -11,6 +11,11 @@ from flexbot.strategy.trend_pullback_v1 import get_intent
 from flexbot.trading.state import BatchState, load_state, save_state
 from flexbot.trading.execution import open_batch
 from flexbot.trading.manager import manage_batch
+from flexbot.trading.paper_tracker import (
+    PaperTrade,
+    update_open_paper_trades,
+    upsert_paper_trade,
+)
 
 
 @dataclass
@@ -163,14 +168,31 @@ class TradingEngine:
                 self.status.last_msg = f"symbol_error: {e}"
             return False
 
-    def _can_enter(self) -> bool:
+    def _can_enter(self) -> tuple[bool, str]:
         if self.trading_disabled_today:
-            return False
+            if self.status.daily_dd <= -(self.cfg.daily_stop_percent / 100.0):
+                return False, "daily_stop_blocked"
+            if self.consec_losses >= self.cfg.max_consec_loss:
+                return False, "consec_loss_blocked"
+            return False, "trading_disabled"
+
         if self.state.batch_id:
-            return False
-        if not self._spread_ok():
-            return False
-        return True
+            return False, "batch_open_blocked"
+
+        try:
+            diag = client.get_symbol_diagnostics(self.cfg.symbol)
+            if diag.spread_points > self.cfg.max_spread_points:
+                return (
+                    False,
+                    f"spread_blocked:{diag.spread_points}>{self.cfg.max_spread_points}",
+                )
+        except Exception as e:
+            msg = str(e).lower()
+            if "tick not available" in msg or "market is closed" in msg:
+                return False, "market_closed/no_ticks"
+            return False, f"symbol_error:{e}"
+
+        return True, "ok"
 
     def _log_strategy_heartbeat(self):
         now = time.time()
@@ -195,8 +217,11 @@ class TradingEngine:
         while not self.stop_event.is_set():
             try:
                 self._update_guards()
-                if not self._can_enter():
-                    self.status.loop_state = "guards_blocked"
+                can_enter, guard_reason = self._can_enter()
+                if not can_enter:
+                    self.status.loop_state = guard_reason
+                    self.status.last_msg = guard_reason
+                    self._log_strategy_reason_change(guard_reason)
                     self._log_strategy_heartbeat()
                     self.stop_event.wait(self.cfg.entry_check_seconds)
                     continue
@@ -228,6 +253,32 @@ class TradingEngine:
                     self.cfg.timeframe,
                     closed_bar_time,
                 )
+
+                closed_bar = rates[-2]
+                bar_high = float(closed_bar["high"])
+                bar_low = float(closed_bar["low"])
+                updates = update_open_paper_trades(
+                    symbol=self.cfg.symbol,
+                    timeframe=self.cfg.timeframe,
+                    bar_time=closed_bar_time,
+                    bar_high=bar_high,
+                    bar_low=bar_low,
+                )
+                for trade in updates:
+                    if trade.status in ("sl_hit", "tp3_hit"):
+                        rr_realized = -1.0 if trade.status == "sl_hit" else 3.0
+                        logging.info(
+                            "PAPER_CLOSE batch_id=%s final_status=%s rr_realized=%.2f",
+                            trade.batch_id,
+                            trade.status,
+                            rr_realized,
+                        )
+                    else:
+                        logging.info(
+                            "PAPER_UPDATE batch_id=%s status=%s",
+                            trade.batch_id,
+                            trade.status,
+                        )
 
                 intent = get_intent(
                     symbol=self.cfg.symbol,
@@ -269,11 +320,42 @@ class TradingEngine:
                     logging.info("SIGNAL_COUNT=%s day=%s", self.signal_count, self.current_day)
                     self.last_batch_id = intent.batch_id
                     if self.cfg.paper_mode:
+                        entry = 0.0
+                        tp1 = 0.0
+                        tp2 = 0.0
+                        tp3 = 0.0
+                        tick = client.get_tick(self.cfg.symbol)
+                        if tick is not None:
+                            entry = float(tick.ask if intent.is_long else tick.bid)
+                            r_value = abs(entry - float(intent.sl))
+                            if r_value > 0:
+                                tp1 = entry + r_value if intent.is_long else entry - r_value
+                                tp2 = entry + (2 * r_value) if intent.is_long else entry - (2 * r_value)
+                                tp3 = entry + (3 * r_value) if intent.is_long else entry - (3 * r_value)
+
+                            trade = PaperTrade(
+                                batch_id=intent.batch_id,
+                                symbol=self.cfg.symbol,
+                                timeframe=self.cfg.timeframe,
+                                is_long=intent.is_long,
+                                entry=entry,
+                                sl=float(intent.sl),
+                                tp1=float(tp1),
+                                tp2=float(tp2),
+                                tp3=float(tp3),
+                                created_bar_time=closed_bar_time,
+                            )
+                            upsert_paper_trade(trade)
+
                         logging.info(
-                            "PAPER_SIGNAL batch_id=%s side=%s sl=%.5f reason=%s",
+                            "PAPER_SIGNAL batch_id=%s side=%s entry=%.5f sl=%.5f tp1=%.5f tp2=%.5f tp3=%.5f reason=%s",
                             intent.batch_id,
                             "BUY" if intent.is_long else "SELL",
+                            entry,
                             intent.sl,
+                            tp1,
+                            tp2,
+                            tp3,
                             intent.reason,
                         )
                         self.status.last_msg = "paper_signal_logged"
