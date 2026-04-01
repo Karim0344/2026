@@ -15,6 +15,7 @@ from flexbot.trading.paper_tracker import (
     PaperTrade,
     update_open_paper_trades,
     upsert_paper_trade,
+    load_paper_stats,
 )
 
 
@@ -29,6 +30,16 @@ class EngineStatus:
     last_eval_reason: str = "none"
     last_eval_bar_time: int = 0
     signal_count: int = 0
+
+    paper_total: int = 0
+    paper_open: int = 0
+    paper_closed: int = 0
+    paper_winrate: float = 0.0
+    paper_avg_r: float = 0.0
+    paper_tp1: int = 0
+    paper_tp2: int = 0
+    paper_tp3: int = 0
+    paper_sl: int = 0
 
 
 class TradingEngine:
@@ -120,6 +131,19 @@ class TradingEngine:
             self.signal_count = 0
             logging.info(f"NEW_DAY day={day} equity_start={self.equity_day_start}")
 
+
+    def _refresh_paper_stats(self):
+        stats = load_paper_stats()
+        self.status.paper_total = int(stats.get("total", 0))
+        self.status.paper_open = int(stats.get("open", 0))
+        self.status.paper_closed = int(stats.get("closed", 0))
+        self.status.paper_winrate = float(stats.get("winrate", 0.0))
+        self.status.paper_avg_r = float(stats.get("avg_r", 0.0))
+        self.status.paper_tp1 = int(stats.get("tp1", 0))
+        self.status.paper_tp2 = int(stats.get("tp2", 0))
+        self.status.paper_tp3 = int(stats.get("tp3", 0))
+        self.status.paper_sl = int(stats.get("losses", 0))
+
     def _update_guards(self):
         self._reset_day_if_needed()
         eq = client.account_equity()
@@ -132,6 +156,7 @@ class TradingEngine:
         self.status.daily_dd = dd
         self.status.consec_losses = self.consec_losses
         self.status.signal_count = self.signal_count
+        self._refresh_paper_stats()
 
         if dd <= -(self.cfg.daily_stop_percent / 100.0):
             if not self.trading_disabled_today:
@@ -265,8 +290,12 @@ class TradingEngine:
                     bar_low=bar_low,
                 )
                 for trade in updates:
-                    if trade.status in ("sl_hit", "tp3_hit"):
-                        rr_realized = -1.0 if trade.status == "sl_hit" else 3.0
+                    if trade.status in ("sl_hit", "tp1_hit", "tp2_hit", "tp3_hit"):
+                        rr_realized = -1.0 if trade.status == "sl_hit" else (
+                            1.0 if trade.status == "tp1_hit" else (
+                                2.0 if trade.status == "tp2_hit" else 3.0
+                            )
+                        )
                         logging.info(
                             "PAPER_CLOSE batch_id=%s final_status=%s rr_realized=%.2f",
                             trade.batch_id,
@@ -279,6 +308,20 @@ class TradingEngine:
                             trade.batch_id,
                             trade.status,
                         )
+
+                self._refresh_paper_stats()
+                logging.info(
+                    "PAPER_STATS total=%s open=%s closed=%s winrate=%.2f avg_r=%.2f tp1=%s tp2=%s tp3=%s sl=%s",
+                    self.status.paper_total,
+                    self.status.paper_open,
+                    self.status.paper_closed,
+                    self.status.paper_winrate,
+                    self.status.paper_avg_r,
+                    self.status.paper_tp1,
+                    self.status.paper_tp2,
+                    self.status.paper_tp3,
+                    self.status.paper_sl,
+                )
 
                 intent = get_intent(
                     symbol=self.cfg.symbol,
@@ -346,6 +389,7 @@ class TradingEngine:
                                 created_bar_time=closed_bar_time,
                             )
                             upsert_paper_trade(trade)
+                            self._refresh_paper_stats()
 
                         logging.info(
                             "PAPER_SIGNAL batch_id=%s side=%s entry=%.5f sl=%.5f tp1=%.5f tp2=%.5f tp3=%.5f reason=%s",

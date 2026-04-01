@@ -58,11 +58,11 @@ def get_intent(
     swing_lookback: int,
     sl_atr_buffer_mult: float,
     last_closed_bar_time: int,
-    require_breakout: bool = False,
+    require_breakout: bool = True,
 ) -> TradeIntent:
-    bars = max(ma_trend + 5, swing_lookback + 5, atr_period + 5, rsi_period + 5, 300)
+    bars = max(ma_trend + 10, swing_lookback + 10, atr_period + 10, rsi_period + 10, 300)
     rates = client.copy_rates(symbol, timeframe, bars)
-    if rates is None or len(rates) < (ma_trend + 5):
+    if rates is None or len(rates) < (ma_trend + 10):
         return TradeIntent(valid=False, reason="not_enough_rates")
 
     df = pd.DataFrame(rates)
@@ -91,41 +91,53 @@ def get_intent(
     ):
         return TradeIntent(valid=False, reason="indicator_nan")
 
+    open0 = float(c0["open"])
     close0 = float(c0["close"])
+    high0 = float(c0["high"])
+    low0 = float(c0["low"])
+
     high1 = float(c1["high"])
     low1 = float(c1["low"])
 
     pull_dist = pullback_atr_mult * atr_v
     dist_ma = abs(close0 - ma_fast_v)
 
-    look = df.iloc[-(swing_lookback + 1) : -1]
-    lowest_low = float(look["low"].min())
-    highest_high = float(look["high"].max())
+    long_zone_touch = low0 <= (ma_fast_v + pull_dist)
+    short_zone_touch = high0 >= (ma_fast_v - pull_dist)
 
-    trend_ok_long = close0 > ma_trend_v
-    trend_ok_short = close0 < ma_trend_v
+    trend_ok_long = close0 > ma_trend_v and ma_fast_v > ma_trend_v
+    trend_ok_short = close0 < ma_trend_v and ma_fast_v < ma_trend_v
 
-    pullback_ok_long = dist_ma <= pull_dist
-    pullback_ok_short = dist_ma <= pull_dist
+    pullback_ok_long = long_zone_touch
+    pullback_ok_short = short_zone_touch
 
-    rsi_ok_long = rsi_v < rsi_long_max
-    rsi_ok_short = rsi_v > rsi_short_min
+    bullish_close = close0 > open0
+    bearish_close = close0 < open0
 
     breakout_ok_long = close0 > high1
     breakout_ok_short = close0 < low1
 
+    rsi_ok_long = 30.0 < rsi_v < rsi_long_max
+    rsi_ok_short = rsi_short_min < rsi_v < 70.0
+
     long_ok = (
         trend_ok_long
         and pullback_ok_long
+        and bullish_close
         and rsi_ok_long
         and (breakout_ok_long if require_breakout else True)
     )
     short_ok = (
         trend_ok_short
         and pullback_ok_short
+        and bearish_close
         and rsi_ok_short
         and (breakout_ok_short if require_breakout else True)
     )
+
+    look = df.iloc[-(swing_lookback + 1): -1]
+    lowest_low = float(look["low"].min())
+    highest_high = float(look["high"].max())
 
     bar_time = int(c0["time"])
     batch_id = f"{symbol}_{timeframe}_{bar_time}"
@@ -134,9 +146,12 @@ def get_intent(
         "symbol": symbol,
         "timeframe": timeframe,
         "bar_time": bar_time,
+        "open": round(open0, 5),
         "close": round(close0, 5),
-        "high1": round(high1, 5),
-        "low1": round(low1, 5),
+        "high": round(high0, 5),
+        "low": round(low0, 5),
+        "prev_high": round(high1, 5),
+        "prev_low": round(low1, 5),
         "ma_fast": round(ma_fast_v, 5),
         "ma_trend": round(ma_trend_v, 5),
         "rsi": round(rsi_v, 2),
@@ -147,6 +162,8 @@ def get_intent(
         "trend_ok_short": trend_ok_short,
         "pullback_ok_long": pullback_ok_long,
         "pullback_ok_short": pullback_ok_short,
+        "bullish_close": bullish_close,
+        "bearish_close": bearish_close,
         "rsi_ok_long": rsi_ok_long,
         "rsi_ok_short": rsi_ok_short,
         "breakout_ok_long": breakout_ok_long,
@@ -162,9 +179,8 @@ def get_intent(
             valid=True,
             is_long=True,
             sl=float(sl),
-            entry=0.0,
             batch_id=batch_id,
-            reason="trend_pullback_long",
+            reason="pro_trend_pullback_long",
             debug=debug,
         )
 
@@ -174,15 +190,16 @@ def get_intent(
             valid=True,
             is_long=False,
             sl=float(sl),
-            entry=0.0,
             batch_id=batch_id,
-            reason="trend_pullback_short",
+            reason="pro_trend_pullback_short",
             debug=debug,
         )
 
     if trend_ok_long:
         if not pullback_ok_long:
             return TradeIntent(False, reason="pullback_fail_long", debug=debug)
+        if not bullish_close:
+            return TradeIntent(False, reason="confirm_fail_long", debug=debug)
         if not rsi_ok_long:
             return TradeIntent(False, reason="rsi_fail_long", debug=debug)
         if require_breakout and not breakout_ok_long:
@@ -191,6 +208,8 @@ def get_intent(
     if trend_ok_short:
         if not pullback_ok_short:
             return TradeIntent(False, reason="pullback_fail_short", debug=debug)
+        if not bearish_close:
+            return TradeIntent(False, reason="confirm_fail_short", debug=debug)
         if not rsi_ok_short:
             return TradeIntent(False, reason="rsi_fail_short", debug=debug)
         if require_breakout and not breakout_ok_short:
