@@ -1,8 +1,10 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
+
 import MetaTrader5 as mt5
+
 from flexbot.mt5 import client
-from flexbot.trading.state import BatchState, save_state, clear_state
+from flexbot.trading.state import BatchState, clear_state, save_state
 
 
 def _pos_exists(ticket: int) -> bool:
@@ -34,12 +36,10 @@ def _modify_sl(ticket: int, new_sl: float, new_tp: float | None = None) -> bool:
     }
     res = mt5.order_send(request)
     if res is None:
-        logging.error(f"SLTP failed ticket={ticket} result=None err={mt5.last_error()}")
+        logging.error("SLTP failed ticket=%s result=None err=%s", ticket, mt5.last_error())
         return False
     if res.retcode != mt5.TRADE_RETCODE_DONE:
-        logging.error(
-            f"SLTP failed ticket={ticket} retcode={res.retcode} comment={res.comment}"
-        )
+        logging.error("SLTP failed ticket=%s retcode=%s comment=%s", ticket, res.retcode, res.comment)
         return False
     return True
 
@@ -78,16 +78,17 @@ def manage_batch(
     if tick is None:
         return state
 
-    # Determine if TP1 is hit: TP1 position is gone AND deals show profit for TP1 comment
     tp1_comment = f"FlexBot|{state.batch_id}|TP1"
     now = client.broker_datetime_utc(symbol)
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     tp1_open = _pos_exists(state.pos1_ticket)
+    tp1_price_hit = (float(tick.bid) >= state.tp1) if state.is_long else (float(tick.ask) <= state.tp1)
+
     if (not state.be_applied) and (not tp1_open):
         prof = _deal_profit_for_comment(symbol, tp1_comment, day_start, now)
-        if prof > 0:
-            # apply BE on TP2/TP3 if open
+        tp1_confirmed = prof > 0 or tp1_price_hit
+        if tp1_confirmed:
             be = (
                 state.entry_price + (be_buffer_points * point)
                 if state.is_long
@@ -99,29 +100,24 @@ def manage_batch(
                 if pos is None:
                     continue
                 cur_sl = float(pos.sl)
-                if state.is_long:
-                    if be > cur_sl:
-                        if _modify_sl(t, be):
-                            logging.info(f"BE_APPLIED ticket={t} new_sl={be}")
-                            changed = True
-                else:
-                    if cur_sl == 0.0 or be < cur_sl:
-                        if _modify_sl(t, be):
-                            logging.info(f"BE_APPLIED ticket={t} new_sl={be}")
-                            changed = True
+                if state.is_long and be > cur_sl:
+                    if _modify_sl(t, be):
+                        logging.info("BE_APPLIED ticket=%s new_sl=%s", t, be)
+                        changed = True
+                elif (not state.is_long) and (cur_sl == 0.0 or be < cur_sl):
+                    if _modify_sl(t, be):
+                        logging.info("BE_APPLIED ticket=%s new_sl=%s", t, be)
+                        changed = True
             state.be_applied = True
             if changed:
                 save_state(state)
 
-    # Trailing after BE applied
     if state.be_applied:
-        # Get ATR on timeframe using copy_rates
         rates = client.copy_rates(symbol, timeframe, max(atr_period + 5, 200))
         if rates is not None and len(rates) >= atr_period + 2:
             import pandas as pd
 
             df = pd.DataFrame(rates)
-            # ATR calc
             high = df["high"]
             low = df["low"]
             close = df["close"]
@@ -131,8 +127,14 @@ def manage_batch(
                 axis=1,
             ).max(axis=1)
             atr = float(tr.rolling(atr_period).mean().iloc[-2])
+            swing_lookback = min(6, len(df) - 2)
+            look = df.iloc[-(swing_lookback + 1): -1]
+            swing_low = float(look["low"].min())
+            swing_high = float(look["high"].max())
         else:
             atr = 0.0
+            swing_low = 0.0
+            swing_high = 0.0
 
         if atr and atr > 0:
             trail_dist = trail_atr_mult * atr
@@ -146,28 +148,21 @@ def manage_batch(
                     continue
                 cur_sl = float(pos.sl)
                 if state.is_long:
-                    new_sl = bid - trail_dist
+                    atr_sl = bid - trail_dist
+                    new_sl = max(atr_sl, swing_low)
                     if new_sl > (cur_sl + step):
                         if _modify_sl(t, new_sl):
-                            logging.info(
-                                f"TRAIL_UPDATE ticket={t} sl {cur_sl}->{new_sl}"
-                            )
+                            logging.info("TRAIL_UPDATE ticket=%s sl %s->%s", t, cur_sl, new_sl)
                 else:
-                    new_sl = ask + trail_dist
+                    atr_sl = ask + trail_dist
+                    new_sl = min(atr_sl, swing_high)
                     if cur_sl == 0.0 or new_sl < (cur_sl - step):
                         if _modify_sl(t, new_sl):
-                            logging.info(
-                                f"TRAIL_UPDATE ticket={t} sl {cur_sl}->{new_sl}"
-                            )
+                            logging.info("TRAIL_UPDATE ticket=%s sl %s->%s", t, cur_sl, new_sl)
 
-    # Batch close detection: if all tickets gone => clear
-    open_any = (
-        _pos_exists(state.pos1_ticket)
-        or _pos_exists(state.pos2_ticket)
-        or _pos_exists(state.pos3_ticket)
-    )
+    open_any = _pos_exists(state.pos1_ticket) or _pos_exists(state.pos2_ticket) or _pos_exists(state.pos3_ticket)
     if not open_any:
-        logging.info(f"BATCH_DONE id={state.batch_id}")
+        logging.info("BATCH_DONE id=%s", state.batch_id)
         clear_state()
         return BatchState()
 

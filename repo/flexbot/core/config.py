@@ -5,9 +5,9 @@ from dataclasses import dataclass
 class BotConfig:
     symbol: str = "XAUUSD"
     timeframe: str = "M5"
-    risk_percent: float = 1.0
-    daily_stop_percent: float = 3.0
-    max_consec_loss: int = 3
+    risk_percent: float = 0.5
+    daily_stop_percent: float = 2.0
+    max_consec_loss: int = 2
     max_spread_points: int = 35
     magic: int = 26022026
 
@@ -26,17 +26,17 @@ class BotConfig:
     ma_trend: int = 200
     rsi_period: int = 14
     atr_period: int = 14
-    pullback_atr_mult: float = 3.0
-    rsi_long_max: float = 70.0
-    rsi_short_min: float = 30.0
-    require_breakout: bool = False
+    pullback_atr_mult: float = 2.5
+    rsi_long_max: float = 65.0
+    rsi_short_min: float = 35.0
+    require_breakout: bool = True
     swing_lookback: int = 10
-    sl_atr_buffer_mult: float = 0.2
+    sl_atr_buffer_mult: float = 0.25
 
     # Management
     be_buffer_points: int = 2
-    trail_atr_mult: float = 1.2
-    trail_step_atr_mult: float = 0.3
+    trail_atr_mult: float = 1.0
+    trail_step_atr_mult: float = 0.25
 
     # Loop
     entry_check_seconds: float = 1.0  # check new bar via tick time
