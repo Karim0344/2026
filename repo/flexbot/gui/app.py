@@ -409,7 +409,16 @@ class App:
                         f"Equity: {st.equity:.2f} | "
                         f"Daily DD: {st.daily_dd * 100:.2f}% | "
                         f"Loss streak: {st.consec_losses} | "
-                        f"Signals: {st.signal_count}"
+                        f"Signals: {st.signal_count}\n"
+                        f"Paper total: {st.paper_total} | "
+                        f"Open: {st.paper_open} | "
+                        f"Closed: {st.paper_closed} | "
+                        f"Winrate: {st.paper_winrate:.2f}% | "
+                        f"Avg R: {st.paper_avg_r:.2f}\n"
+                        f"TP1: {st.paper_tp1} | "
+                        f"TP2: {st.paper_tp2} | "
+                        f"TP3: {st.paper_tp3} | "
+                        f"SL: {st.paper_sl}"
                     )
                 )
             elif self.engine and not self.engine.status.running:
