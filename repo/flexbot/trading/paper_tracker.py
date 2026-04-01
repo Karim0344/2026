@@ -21,6 +21,7 @@ class PaperTrade:
     tp3_hit: bool = False
     sl_hit: bool = False
     closed_bar_time: int = 0
+    signal_reason: str = ""
 
 
 def load_paper_trades(path: str = "paper_trades.json") -> list[PaperTrade]:
@@ -45,6 +46,7 @@ def upsert_paper_trade(trade: PaperTrade, path: str = "paper_trades.json") -> No
         if existing.batch_id == trade.batch_id:
             trades[idx] = trade
             save_paper_trades(trades, path)
+odex/refactor-trading-strategy-for-better-performance-d6t3jd
             save_paper_stats(path=path)
             return
     trades.append(trade)
@@ -151,6 +153,17 @@ def _update_trade_with_bar(
     bar_time: int,
     bar_high: float,
     bar_low: float,
+
+            save_paper_stats(trades)
+            return
+    trades.append(trade)
+    save_paper_trades(trades, path)
+    save_paper_stats(trades)
+
+
+def _update_trade_with_bar(
+    trade: PaperTrade, bar_time: int, bar_high: float, bar_low: float
+
 ) -> tuple[PaperTrade, bool]:
     if trade.status != "open":
         return trade, False
@@ -212,6 +225,46 @@ def _update_trade_with_bar(
     return trade, changed
 
 
+def save_paper_stats(trades: list[PaperTrade], path: str = "paper_stats.json") -> None:
+    closed = [t for t in trades if t.status in {"sl_hit", "tp3_hit"}]
+    total_closed = len(closed)
+    wins = sum(1 for t in closed if t.status == "tp3_hit")
+    losses = sum(1 for t in closed if t.status == "sl_hit")
+    avg_r = ((wins * 3.0) + (losses * -1.0)) / total_closed if total_closed else 0.0
+
+    per_reason: dict[str, dict[str, float | int]] = {}
+    for t in closed:
+        key = t.signal_reason or "unknown"
+        if key not in per_reason:
+            per_reason[key] = {"count": 0, "wins": 0, "losses": 0, "avg_r": 0.0}
+        per_reason[key]["count"] += 1
+        if t.status == "tp3_hit":
+            per_reason[key]["wins"] += 1
+        else:
+            per_reason[key]["losses"] += 1
+
+    for key, val in per_reason.items():
+        count = int(val["count"])
+        if count > 0:
+            val["avg_r"] = ((int(val["wins"]) * 3.0) + (int(val["losses"]) * -1.0)) / count
+
+    stats = {
+        "total": len(trades),
+        "open": sum(1 for t in trades if t.status == "open"),
+        "closed": total_closed,
+        "winrate": (wins / total_closed) if total_closed else 0.0,
+        "avg_r": avg_r,
+        "sl_hit": sum(1 for t in trades if t.sl_hit),
+        "tp1_hit": sum(1 for t in trades if t.tp1_hit),
+        "tp2_hit": sum(1 for t in trades if t.tp2_hit),
+        "tp3_hit": sum(1 for t in trades if t.tp3_hit),
+        "per_reason": per_reason,
+    }
+
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(stats, f, ensure_ascii=False, indent=2)
+
+
 def update_open_paper_trades(
     symbol: str,
     timeframe: str,
@@ -235,6 +288,9 @@ def update_open_paper_trades(
 
     if changed:
         save_paper_trades(trades, path)
+
         save_paper_stats(path=path)
+
+        save_paper_stats(trades)
 
     return updates
