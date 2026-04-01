@@ -344,6 +344,7 @@ class TradingEngine:
                                 tp2=float(tp2),
                                 tp3=float(tp3),
                                 created_bar_time=closed_bar_time,
+                                signal_reason=intent.reason,
                             )
                             upsert_paper_trade(trade)
 
