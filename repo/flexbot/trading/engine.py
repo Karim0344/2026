@@ -6,7 +6,8 @@ import MetaTrader5 as mt5
 
 from flexbot.core.config import BotConfig
 from flexbot.mt5 import client
-from flexbot.strategy.trend_pullback_v1 import get_intent
+from flexbot.strategy.trend_pullback_v1 import TradeIntent, get_intent as trend_intent
+from flexbot.strategy.range_rejection import get_range_intent
 from flexbot.trading.state import BatchState, load_state, save_state
 from flexbot.trading.execution import open_batch
 from flexbot.trading.manager import manage_batch
@@ -366,21 +367,35 @@ class TradingEngine:
                 )
 
                 regime, regime_debug = detect_regime(self.cfg.symbol, self.cfg.timeframe)
-                if regime in {"dead", "high_volatility"}:
-                    reason = f"regime_blocked:{regime}"
-                    self.status.loop_state = reason
-                    self.status.last_msg = reason
-                    self._log_strategy_reason_change(reason)
+
+                if regime == "trend":
+                    intent = trend_intent(
+                        symbol=self.cfg.symbol,
+                        timeframe=self.cfg.timeframe,
+                        cfg=self.cfg,
+                        last_closed_bar_time=self.last_closed_bar_time,
+                    )
+                elif regime == "range":
+                    range_intent = get_range_intent(self.cfg.symbol, self.cfg.timeframe, self.cfg)
+                    is_long = range_intent.direction == "long"
+                    is_short = range_intent.direction == "short"
+                    intent = TradeIntent(
+                        valid=is_long or is_short,
+                        is_long=is_long,
+                        entry=range_intent.entry,
+                        sl=range_intent.sl,
+                        batch_id=f"{self.cfg.symbol}_{self.cfg.timeframe}_{closed_bar_time}_range",
+                        reason=range_intent.reason,
+                        debug=range_intent.debug,
+                    )
+                else:
+                    self.status.loop_state = f"skip:{regime}"
+                    self.status.last_msg = f"skip:{regime}"
+                    self._log_strategy_reason_change(self.status.last_msg)
                     self._log_strategy_heartbeat()
                     self.stop_event.wait(self.cfg.entry_check_seconds)
                     continue
 
-                intent = get_intent(
-                    symbol=self.cfg.symbol,
-                    timeframe=self.cfg.timeframe,
-                    cfg=self.cfg,
-                    last_closed_bar_time=self.last_closed_bar_time,
-                )
                 intent.debug = {**(intent.debug or {}), "regime": regime, "regime_debug": regime_debug}
 
                 # Always mark current closed bar as processed, even when no signal.
