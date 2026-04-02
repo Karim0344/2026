@@ -3,28 +3,27 @@ from flexbot.ai.scoring import confidence_score
 
 def test_confidence_score_high_quality_long_setup():
     features = {
-        "trend_ok_long": True,
-        "htf_ok_long": True,
-        "pullback_ok_long": True,
-        "bullish_close": True,
-        "breakout_ok_long": True,
-        "rsi": 50,
+        "trend_ok": True,
+        "htf_ok": True,
+        "pullback": True,
+        "momentum": True,
+        "breakout": True,
         "spread_points": 20,
     }
 
-    score = confidence_score(features, is_long=True, max_spread_points=35)
-    assert score == 100
+    score = confidence_score(features, is_long=True, max_spread=35)
+    assert score == 90
 
 
 def test_confidence_score_blocks_low_quality_setup():
     features = {
-        "trend_ok_long": True,
-        "pullback_ok_long": False,
-        "bullish_close": False,
-        "breakout_ok_long": False,
-        "rsi": 72,
+        "trend_ok": True,
+        "htf_ok": False,
+        "pullback": False,
+        "momentum": False,
+        "breakout": False,
         "spread_points": 40,
     }
 
-    score = confidence_score(features, is_long=True, max_spread_points=35)
+    score = confidence_score(features, is_long=True, max_spread=35)
     assert score == 10

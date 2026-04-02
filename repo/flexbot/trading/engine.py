@@ -2,7 +2,6 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
 import MetaTrader5 as mt5
 
 from flexbot.core.config import BotConfig
@@ -20,6 +19,8 @@ from flexbot.trading.paper_tracker import (
 from flexbot.ai.features import build_feature_snapshot
 from flexbot.ai.scoring import confidence_score
 from flexbot.ai.memory import log_trade_open, log_trade_close
+from flexbot.ai.optimizer import analyze_memory
+from flexbot.ai.regime import detect_regime
 
 
 @dataclass
@@ -67,6 +68,7 @@ class TradingEngine:
         self._last_strategy_reason: str | None = None
         self._entry_thread: threading.Thread | None = None
         self._manage_thread: threading.Thread | None = None
+        self._last_optimizer_check = 0.0
 
     def start(self):
         mt5_initialize_started = False
@@ -174,18 +176,26 @@ class TradingEngine:
             self.trading_disabled_today = True
         self._performance_guard()
 
+        now_ts = time.time()
+        if now_ts - self._last_optimizer_check >= 1800:
+            self._last_optimizer_check = now_ts
+            analysis = analyze_memory(self.cfg.ai_memory_path)
+            if analysis.get("total", 0) >= 30:
+                for msg in analysis.get("suggestions", []):
+                    logging.info("AI_OPTIMIZER %s", msg)
+
     def _performance_guard(self):
         stats = load_paper_stats()
         closed = int(stats.get("closed", 0))
         avg_r = float(stats.get("avg_r", 0.0))
         winrate = float(stats.get("winrate", 0.0))
 
-        if closed >= 20 and avg_r < 0:
+        if closed > 20 and avg_r < 0:
             if not self.trading_disabled_today:
                 logging.warning("PERF_STOP avg_r=%.2f closed=%s", avg_r, closed)
             self.trading_disabled_today = True
 
-        if closed >= 20 and winrate < 40:
+        if closed > 20 and winrate < 40:
             logging.warning("PERF_WEAK winrate=%.2f closed=%s", winrate, closed)
 
     def _spread_ok(self) -> bool:
@@ -355,21 +365,23 @@ class TradingEngine:
                     self.status.paper_sl,
                 )
 
+                regime, regime_debug = detect_regime(self.cfg.symbol, self.cfg.timeframe)
+                if regime in {"dead", "high_volatility"}:
+                    reason = f"regime_blocked:{regime}"
+                    self.status.loop_state = reason
+                    self.status.last_msg = reason
+                    self._log_strategy_reason_change(reason)
+                    self._log_strategy_heartbeat()
+                    self.stop_event.wait(self.cfg.entry_check_seconds)
+                    continue
+
                 intent = get_intent(
                     symbol=self.cfg.symbol,
                     timeframe=self.cfg.timeframe,
-                    ma_fast=self.cfg.ma_fast,
-                    ma_trend=self.cfg.ma_trend,
-                    rsi_period=self.cfg.rsi_period,
-                    atr_period=self.cfg.atr_period,
-                    pullback_atr_mult=self.cfg.pullback_atr_mult,
-                    rsi_long_max=self.cfg.rsi_long_max,
-                    rsi_short_min=self.cfg.rsi_short_min,
-                    swing_lookback=self.cfg.swing_lookback,
-                    sl_atr_buffer_mult=self.cfg.sl_atr_buffer_mult,
+                    cfg=self.cfg,
                     last_closed_bar_time=self.last_closed_bar_time,
-                    require_breakout=self.cfg.require_breakout,
                 )
+                intent.debug = {**(intent.debug or {}), "regime": regime, "regime_debug": regime_debug}
 
                 # Always mark current closed bar as processed, even when no signal.
                 self.last_closed_bar_time = closed_bar_time
@@ -407,7 +419,7 @@ class TradingEngine:
                     confidence = confidence_score(
                         features=features,
                         is_long=bool(intent.is_long),
-                        max_spread_points=self.cfg.max_spread_points,
+                        max_spread=self.cfg.max_spread_points,
                     )
                     ai_decision = "pass"
                     if self.cfg.ai_enable_scoring and confidence < self.cfg.ai_min_confidence:

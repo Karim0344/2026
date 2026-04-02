@@ -1,4 +1,3 @@
-import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -12,28 +11,18 @@ from flexbot.mt5 import client
 class TradeIntent:
     valid: bool
     is_long: bool = False
-    sl: float = 0.0
     entry: float = 0.0
+    sl: float = 0.0
     batch_id: str = ""
     reason: str = ""
     debug: dict[str, Any] = field(default_factory=dict)
 
 
-def _sma(series: pd.Series, period: int) -> pd.Series:
-    return series.rolling(period).mean()
+def _sma(series: pd.Series, n: int) -> pd.Series:
+    return series.rolling(n).mean()
 
 
-def _rsi(close: pd.Series, period: int) -> pd.Series:
-    delta = close.diff()
-    gain = delta.where(delta > 0, 0.0)
-    loss = -delta.where(delta < 0, 0.0)
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
-    rs = avg_gain / avg_loss
-    return 100.0 - (100.0 / (1.0 + rs))
-
-
-def _atr(df: pd.DataFrame, period: int) -> pd.Series:
+def _atr(df: pd.DataFrame, n: int) -> pd.Series:
     high = df["high"]
     low = df["low"]
     close = df["close"]
@@ -42,206 +31,113 @@ def _atr(df: pd.DataFrame, period: int) -> pd.Series:
         [(high - low), (high - prev_close).abs(), (low - prev_close).abs()],
         axis=1,
     ).max(axis=1)
-    return tr.rolling(period).mean()
+    return tr.rolling(n).mean()
 
 
 def _htf_trend_ok(symbol: str, htf: str, ma_trend: int, is_long: bool) -> bool:
-    rates = client.copy_rates(symbol, htf, max(ma_trend + 5, 250))
+    rates = client.copy_rates(symbol, htf, max(ma_trend + 5, 200))
     if rates is None or len(rates) < ma_trend + 2:
         return False
 
     df = pd.DataFrame(rates)
-    df["ma_trend"] = _sma(df["close"], ma_trend)
+    df["ma"] = _sma(df["close"], ma_trend)
+
     c0 = df.iloc[-2]
-    close0 = float(c0["close"])
-    ma_trend_v = float(c0["ma_trend"])
-    if np.isnan(ma_trend_v):
+    if np.isnan(c0["ma"]):
         return False
-    return close0 > ma_trend_v if is_long else close0 < ma_trend_v
+
+    return bool(c0["close"] > c0["ma"]) if is_long else bool(c0["close"] < c0["ma"])
 
 
-def get_intent(
-    symbol: str,
-    timeframe: str,
-    ma_fast: int,
-    ma_trend: int,
-    rsi_period: int,
-    atr_period: int,
-    pullback_atr_mult: float,
-    rsi_long_max: float,
-    rsi_short_min: float,
-    swing_lookback: int,
-    sl_atr_buffer_mult: float,
-    last_closed_bar_time: int,
-    require_breakout: bool = True,
-) -> TradeIntent:
-    bars = max(ma_trend + 10, swing_lookback + 10, atr_period + 10, rsi_period + 10, 300)
-    rates = client.copy_rates(symbol, timeframe, bars)
-    if rates is None or len(rates) < (ma_trend + 10):
-        return TradeIntent(valid=False, reason="not_enough_rates")
+def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> TradeIntent:
+    rates = client.copy_rates(symbol, timeframe, 200)
+    if rates is None or len(rates) < 100:
+        return TradeIntent(False, reason="no_data")
 
     df = pd.DataFrame(rates)
-    if int(df["time"].iloc[-2]) == int(last_closed_bar_time):
-        return TradeIntent(valid=False, reason="same_bar")
+    c0 = df.iloc[-2]
+    if int(c0["time"]) == int(last_closed_bar_time):
+        return TradeIntent(False, reason="same_bar")
 
-    df["ma_fast"] = _sma(df["close"], ma_fast)
-    df["ma_trend"] = _sma(df["close"], ma_trend)
-    df["rsi"] = _rsi(df["close"], rsi_period)
-    df["atr"] = _atr(df, atr_period)
+    df["ma_fast"] = _sma(df["close"], cfg.ma_fast)
+    df["ma_trend"] = _sma(df["close"], cfg.ma_trend)
+    df["atr"] = _atr(df, cfg.atr_period)
 
     c0 = df.iloc[-2]
     c1 = df.iloc[-3]
 
-    ma_fast_v = float(c0["ma_fast"])
-    ma_trend_v = float(c0["ma_trend"])
-    rsi_v = float(c0["rsi"])
-    atr_v = float(c0["atr"])
+    close = float(c0["close"])
+    open_ = float(c0["open"])
+    high = float(c0["high"])
+    low = float(c0["low"])
 
-    if (
-        np.isnan(ma_fast_v)
-        or np.isnan(ma_trend_v)
-        or np.isnan(rsi_v)
-        or np.isnan(atr_v)
-        or atr_v <= 0
-    ):
-        return TradeIntent(valid=False, reason="indicator_nan")
+    ma_fast = float(c0["ma_fast"])
+    ma_trend = float(c0["ma_trend"])
+    atr = float(c0["atr"])
 
-    open0 = float(c0["open"])
-    close0 = float(c0["close"])
-    high0 = float(c0["high"])
-    low0 = float(c0["low"])
+    if np.isnan(ma_fast) or np.isnan(ma_trend) or np.isnan(atr):
+        return TradeIntent(False, entry=close, reason="nan")
 
-    high1 = float(c1["high"])
-    low1 = float(c1["low"])
+    trend_long = close > ma_trend
+    trend_short = close < ma_trend
 
-    pull_dist = pullback_atr_mult * atr_v
-    dist_ma = abs(close0 - ma_fast_v)
+    htf_long = _htf_trend_ok(symbol, "H1", cfg.ma_trend, True)
+    htf_short = _htf_trend_ok(symbol, "H1", cfg.ma_trend, False)
 
-    long_zone_touch = low0 <= (ma_fast_v + pull_dist)
-    short_zone_touch = high0 >= (ma_fast_v - pull_dist)
+    pullback_long = low <= ma_fast + atr * 0.2
+    pullback_short = high >= ma_fast - atr * 0.2
 
-    trend_ok_long = close0 > ma_trend_v and ma_fast_v > ma_trend_v
-    trend_ok_short = close0 < ma_trend_v and ma_fast_v < ma_trend_v
+    bullish = close > open_
+    bearish = close < open_
 
-    pullback_ok_long = long_zone_touch
-    pullback_ok_short = short_zone_touch
+    breakout_long = high > float(c1["high"])
+    breakout_short = low < float(c1["low"])
 
-    bullish_close = close0 > open0
-    bearish_close = close0 < open0
+    entry = close
 
-    breakout_ok_long = close0 > high1
-    breakout_ok_short = close0 < low1
+    sl_long = low - atr * 1.2
+    sl_short = high + atr * 1.2
 
-    rsi_ok_long = 30.0 < rsi_v < rsi_long_max
-    rsi_ok_short = rsi_short_min < rsi_v < 70.0
+    candle_range = max(high - low, 1e-9)
+    body_size = abs(close - open_)
+    upper_wick = max(high - max(open_, close), 0.0)
+    lower_wick = max(min(open_, close) - low, 0.0)
+    wick_ratio = (upper_wick + lower_wick) / candle_range
 
-    htf_ok_long = _htf_trend_ok(symbol, "H1", ma_trend, True)
-    htf_ok_short = _htf_trend_ok(symbol, "H1", ma_trend, False)
-
-    long_ok = (
-        trend_ok_long
-        and htf_ok_long
-        and pullback_ok_long
-        and bullish_close
-        and rsi_ok_long
-        and (breakout_ok_long if require_breakout else True)
-    )
-    short_ok = (
-        trend_ok_short
-        and htf_ok_short
-        and pullback_ok_short
-        and bearish_close
-        and rsi_ok_short
-        and (breakout_ok_short if require_breakout else True)
-    )
-
-    look = df.iloc[-(swing_lookback + 1): -1]
-    lowest_low = float(look["low"].min())
-    highest_high = float(look["high"].max())
-
-    bar_time = int(c0["time"])
-    batch_id = f"{symbol}_{timeframe}_{bar_time}"
+    session = "london_ny" if 7 <= client.broker_datetime_utc(symbol).hour <= 20 else "off_session"
 
     debug = {
         "symbol": symbol,
         "timeframe": timeframe,
-        "bar_time": bar_time,
-        "open": round(open0, 5),
-        "close": round(close0, 5),
-        "high": round(high0, 5),
-        "low": round(low0, 5),
-        "prev_high": round(high1, 5),
-        "prev_low": round(low1, 5),
-        "ma_fast": round(ma_fast_v, 5),
-        "ma_trend": round(ma_trend_v, 5),
-        "rsi": round(rsi_v, 2),
-        "atr": round(atr_v, 5),
-        "dist_ma": round(dist_ma, 5),
-        "pull_dist": round(pull_dist, 5),
-        "trend_ok_long": trend_ok_long,
-        "trend_ok_short": trend_ok_short,
-        "htf_ok_long": htf_ok_long,
-        "htf_ok_short": htf_ok_short,
-        "pullback_ok_long": pullback_ok_long,
-        "pullback_ok_short": pullback_ok_short,
-        "bullish_close": bullish_close,
-        "bearish_close": bearish_close,
-        "rsi_ok_long": rsi_ok_long,
-        "rsi_ok_short": rsi_ok_short,
-        "breakout_ok_long": breakout_ok_long,
-        "breakout_ok_short": breakout_ok_short,
-        "require_breakout": require_breakout,
+        "bar_time": int(c0["time"]),
+        "trend_ok_long": trend_long,
+        "trend_ok_short": trend_short,
+        "htf_ok_long": htf_long,
+        "htf_ok_short": htf_short,
+        "pullback_ok_long": pullback_long,
+        "pullback_ok_short": pullback_short,
+        "bullish_close": bullish,
+        "bearish_close": bearish,
+        "breakout_ok_long": breakout_long,
+        "breakout_ok_short": breakout_short,
+        "trend_ok": trend_long or trend_short,
+        "htf_ok": htf_long or htf_short,
+        "pullback": pullback_long or pullback_short,
+        "momentum": bullish or bearish,
+        "breakout": breakout_long or breakout_short,
+        "body_size": round(body_size, 6),
+        "wick_ratio": round(wick_ratio, 6),
+        "session": session,
     }
 
-    logging.info("BAR_DEBUG %s", debug)
+    long_ok = all([trend_long, htf_long, pullback_long, bullish, breakout_long])
+    short_ok = all([trend_short, htf_short, pullback_short, bearish, breakout_short])
 
+    batch_id = f"{symbol}_{timeframe}_{int(c0['time'])}"
     if long_ok:
-        sl = lowest_low - (sl_atr_buffer_mult * atr_v)
-        return TradeIntent(
-            valid=True,
-            is_long=True,
-            sl=float(sl),
-            batch_id=batch_id,
-            reason="pro_trend_pullback_long",
-            debug=debug,
-        )
+        return TradeIntent(True, True, entry=entry, sl=sl_long, batch_id=batch_id, reason="PRO_LONG", debug=debug)
 
     if short_ok:
-        sl = highest_high + (sl_atr_buffer_mult * atr_v)
-        return TradeIntent(
-            valid=True,
-            is_long=False,
-            sl=float(sl),
-            batch_id=batch_id,
-            reason="pro_trend_pullback_short",
-            debug=debug,
-        )
+        return TradeIntent(True, False, entry=entry, sl=sl_short, batch_id=batch_id, reason="PRO_SHORT", debug=debug)
 
-    if trend_ok_long:
-        if not htf_ok_long:
-            return TradeIntent(False, reason="htf_fail_long", debug=debug)
-        if not pullback_ok_long:
-            return TradeIntent(False, reason="pullback_fail_long", debug=debug)
-        if not bullish_close:
-            return TradeIntent(False, reason="confirm_fail_long", debug=debug)
-        if not rsi_ok_long:
-            return TradeIntent(False, reason="rsi_fail_long", debug=debug)
-        if require_breakout and not breakout_ok_long:
-            return TradeIntent(False, reason="breakout_fail_long", debug=debug)
-
-    if trend_ok_short:
-        if not htf_ok_short:
-            return TradeIntent(False, reason="htf_fail_short", debug=debug)
-        if not pullback_ok_short:
-            return TradeIntent(False, reason="pullback_fail_short", debug=debug)
-        if not bearish_close:
-            return TradeIntent(False, reason="confirm_fail_short", debug=debug)
-        if not rsi_ok_short:
-            return TradeIntent(False, reason="rsi_fail_short", debug=debug)
-        if require_breakout and not breakout_ok_short:
-            return TradeIntent(False, reason="breakout_fail_short", debug=debug)
-
-    if not trend_ok_long and not trend_ok_short:
-        return TradeIntent(False, reason="trend_fail", debug=debug)
-
-    return TradeIntent(False, reason="no_signal", debug=debug)
+    return TradeIntent(False, entry=entry, batch_id=batch_id, reason="no_signal", debug=debug)
