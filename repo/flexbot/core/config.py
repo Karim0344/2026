@@ -21,6 +21,11 @@ class BotConfig:
     # Modes
     paper_mode: bool = True  # dry-run: log signals, do not send orders
 
+    # AI assist
+    ai_enable_scoring: bool = True
+    ai_min_confidence: int = 80
+    ai_memory_path: str = "trade_memory.jsonl"
+
     # Strategy params
     ma_fast: int = 50
     ma_trend: int = 200

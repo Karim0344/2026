@@ -17,6 +17,9 @@ from flexbot.trading.paper_tracker import (
     upsert_paper_trade,
     load_paper_stats,
 )
+from flexbot.ai.features import build_feature_snapshot
+from flexbot.ai.scoring import confidence_score
+from flexbot.ai.memory import log_trade_open, log_trade_close
 
 
 @dataclass
@@ -296,6 +299,11 @@ class TradingEngine:
                                 2.0 if trade.status == "tp2_hit" else 3.0
                             )
                         )
+                        log_trade_close(
+                            trade=trade,
+                            result_r=rr_realized,
+                            path=self.cfg.ai_memory_path,
+                        )
                         logging.info(
                             "PAPER_CLOSE batch_id=%s final_status=%s rr_realized=%.2f",
                             trade.batch_id,
@@ -358,6 +366,39 @@ class TradingEngine:
                 self._log_strategy_reason_change(intent.reason)
 
                 if intent.valid and intent.batch_id != self.last_batch_id:
+                    spread_points = 0
+                    try:
+                        spread_points = int(
+                            client.get_symbol_diagnostics(self.cfg.symbol).spread_points
+                        )
+                    except Exception:
+                        spread_points = self.cfg.max_spread_points
+
+                    features = build_feature_snapshot(
+                        signal_reason=intent.reason,
+                        intent_debug=intent.debug,
+                        spread_points=spread_points,
+                        max_spread_points=self.cfg.max_spread_points,
+                    )
+                    confidence = confidence_score(
+                        features=features,
+                        is_long=bool(intent.is_long),
+                        max_spread_points=self.cfg.max_spread_points,
+                    )
+                    if self.cfg.ai_enable_scoring and confidence < self.cfg.ai_min_confidence:
+                        self.status.last_msg = f"ai_score_blocked:{confidence}<{self.cfg.ai_min_confidence}"
+                        self._log_strategy_reason_change(self.status.last_msg)
+                        logging.info(
+                            "AI_SCORE_SKIP batch_id=%s score=%s min=%s reason=%s",
+                            intent.batch_id,
+                            confidence,
+                            self.cfg.ai_min_confidence,
+                            intent.reason,
+                        )
+                        self._log_strategy_heartbeat()
+                        self.stop_event.wait(self.cfg.entry_check_seconds)
+                        continue
+
                     self.signal_count += 1
                     self.status.signal_count = self.signal_count
                     logging.info("SIGNAL_COUNT=%s day=%s", self.signal_count, self.current_day)
@@ -388,8 +429,11 @@ class TradingEngine:
                                 tp3=float(tp3),
                                 created_bar_time=closed_bar_time,
                                 signal_reason=intent.reason,
+                                confidence_score=confidence,
+                                features=features,
                             )
                             upsert_paper_trade(trade)
+                            log_trade_open(trade=trade, path=self.cfg.ai_memory_path)
                             self._refresh_paper_stats()
 
                         logging.info(

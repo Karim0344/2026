@@ -1,4 +1,4 @@
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import json
 import os
 
@@ -21,6 +21,9 @@ class PaperTrade:
     tp3_hit: bool = False
     sl_hit: bool = False
     closed_bar_time: int = 0
+    signal_reason: str = ""
+    confidence_score: int = 0
+    features: dict = field(default_factory=dict)
 
 
 def load_paper_trades(path: str = "paper_trades.json") -> list[PaperTrade]:
