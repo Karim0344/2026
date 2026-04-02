@@ -22,6 +22,7 @@ from flexbot.ai.scoring import confidence_score
 from flexbot.ai.memory import log_trade_open, log_trade_close
 from flexbot.ai.optimizer import analyze_memory
 from flexbot.ai.regime import detect_regime
+from flexbot.ai.selector import selector_adjustment
 
 
 @dataclass
@@ -368,6 +369,14 @@ class TradingEngine:
 
                 regime, regime_debug = detect_regime(self.cfg.symbol, self.cfg.timeframe)
 
+                if regime in {"dead", "high_volatility"}:
+                    self.status.loop_state = f"regime_blocked:{regime}"
+                    self.status.last_msg = f"regime_blocked:{regime}"
+                    self._log_strategy_reason_change(self.status.last_msg)
+                    self._log_strategy_heartbeat()
+                    self.stop_event.wait(self.cfg.entry_check_seconds)
+                    continue
+
                 if regime == "trend":
                     intent = trend_intent(
                         symbol=self.cfg.symbol,
@@ -430,12 +439,62 @@ class TradingEngine:
                         intent_debug=intent.debug,
                         spread_points=spread_points,
                         max_spread_points=self.cfg.max_spread_points,
+                        regime=regime,
                     )
-                    confidence = confidence_score(
+                    base_confidence = confidence_score(
                         features=features,
                         is_long=bool(intent.is_long),
                         max_spread=self.cfg.max_spread_points,
                     )
+
+                    selector = {
+                        "block": False,
+                        "bonus": 0,
+                        "reason": "selector_disabled",
+                        "samples": 0,
+                        "avg_r": 0.0,
+                        "winrate": 0.0,
+                    }
+                    if self.cfg.ai_selector_enable:
+                        selector = selector_adjustment(
+                            signal_reason=intent.reason,
+                            regime=regime,
+                            path=self.cfg.ai_memory_path,
+                            min_samples=self.cfg.ai_selector_min_samples,
+                        )
+
+                    if selector["block"]:
+                        self.status.last_msg = f"ai_selector_blocked:{selector['reason']}"
+                        self._log_strategy_reason_change(self.status.last_msg)
+                        logging.info(
+                            "AI_SELECTOR_BLOCK batch_id=%s strategy=%s regime=%s reason=%s samples=%s avg_r=%.2f winrate=%.2f",
+                            intent.batch_id,
+                            intent.reason,
+                            regime,
+                            selector["reason"],
+                            selector["samples"],
+                            selector["avg_r"],
+                            selector["winrate"],
+                        )
+                        self._log_strategy_heartbeat()
+                        self.stop_event.wait(self.cfg.entry_check_seconds)
+                        continue
+
+                    confidence = max(0, min(100, base_confidence + int(selector["bonus"])))
+
+                    logging.info(
+                        "AI_SELECTOR strategy=%s regime=%s base=%s bonus=%s final=%s selector_reason=%s samples=%s avg_r=%.2f winrate=%.2f",
+                        intent.reason,
+                        regime,
+                        base_confidence,
+                        selector["bonus"],
+                        confidence,
+                        selector["reason"],
+                        selector["samples"],
+                        selector["avg_r"],
+                        selector["winrate"],
+                    )
+
                     ai_decision = "pass"
                     if self.cfg.ai_enable_scoring and confidence < self.cfg.ai_min_confidence:
                         ai_decision = "blocked"

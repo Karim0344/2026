@@ -26,6 +26,10 @@ class BotConfig:
     ai_min_confidence: int = 70
     ai_memory_path: str = "trade_memory.jsonl"
 
+    # AI selector
+    ai_selector_enable: bool = True
+    ai_selector_min_samples: int = 10
+
     # Strategy params
     ma_fast: int = 50
     ma_trend: int = 200
