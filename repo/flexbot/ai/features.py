@@ -7,6 +7,7 @@ def build_feature_snapshot(
     intent_debug: dict[str, Any] | None,
     spread_points: int,
     max_spread_points: int,
+    regime: str = "",
 ) -> dict[str, Any]:
     debug = intent_debug or {}
 
@@ -41,7 +42,7 @@ def build_feature_snapshot(
         "pullback": bool(debug.get("pullback", pullback_ok_long or pullback_ok_short)),
         "momentum": bool(debug.get("momentum", bullish_close or bearish_close)),
         "breakout": bool(debug.get("breakout", breakout_ok_long or breakout_ok_short)),
-        "regime": str(debug.get("regime", "")),
+        "regime": str(regime),
         "body_size": float(debug.get("body_size", 0.0) or 0.0),
         "wick_ratio": float(debug.get("wick_ratio", 0.0) or 0.0),
         "session": str(debug.get("session", "")),
