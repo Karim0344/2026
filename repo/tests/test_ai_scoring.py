@@ -4,6 +4,7 @@ from flexbot.ai.scoring import confidence_score
 def test_confidence_score_high_quality_long_setup():
     features = {
         "trend_ok_long": True,
+        "htf_ok_long": True,
         "pullback_ok_long": True,
         "bullish_close": True,
         "breakout_ok_long": True,
@@ -26,4 +27,4 @@ def test_confidence_score_blocks_low_quality_setup():
     }
 
     score = confidence_score(features, is_long=True, max_spread_points=35)
-    assert score == 25
+    assert score == 10

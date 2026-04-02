@@ -45,6 +45,21 @@ def _atr(df: pd.DataFrame, period: int) -> pd.Series:
     return tr.rolling(period).mean()
 
 
+def _htf_trend_ok(symbol: str, htf: str, ma_trend: int, is_long: bool) -> bool:
+    rates = client.copy_rates(symbol, htf, max(ma_trend + 5, 250))
+    if rates is None or len(rates) < ma_trend + 2:
+        return False
+
+    df = pd.DataFrame(rates)
+    df["ma_trend"] = _sma(df["close"], ma_trend)
+    c0 = df.iloc[-2]
+    close0 = float(c0["close"])
+    ma_trend_v = float(c0["ma_trend"])
+    if np.isnan(ma_trend_v):
+        return False
+    return close0 > ma_trend_v if is_long else close0 < ma_trend_v
+
+
 def get_intent(
     symbol: str,
     timeframe: str,
@@ -120,8 +135,12 @@ def get_intent(
     rsi_ok_long = 30.0 < rsi_v < rsi_long_max
     rsi_ok_short = rsi_short_min < rsi_v < 70.0
 
+    htf_ok_long = _htf_trend_ok(symbol, "H1", ma_trend, True)
+    htf_ok_short = _htf_trend_ok(symbol, "H1", ma_trend, False)
+
     long_ok = (
         trend_ok_long
+        and htf_ok_long
         and pullback_ok_long
         and bullish_close
         and rsi_ok_long
@@ -129,6 +148,7 @@ def get_intent(
     )
     short_ok = (
         trend_ok_short
+        and htf_ok_short
         and pullback_ok_short
         and bearish_close
         and rsi_ok_short
@@ -160,6 +180,8 @@ def get_intent(
         "pull_dist": round(pull_dist, 5),
         "trend_ok_long": trend_ok_long,
         "trend_ok_short": trend_ok_short,
+        "htf_ok_long": htf_ok_long,
+        "htf_ok_short": htf_ok_short,
         "pullback_ok_long": pullback_ok_long,
         "pullback_ok_short": pullback_ok_short,
         "bullish_close": bullish_close,
@@ -196,6 +218,8 @@ def get_intent(
         )
 
     if trend_ok_long:
+        if not htf_ok_long:
+            return TradeIntent(False, reason="htf_fail_long", debug=debug)
         if not pullback_ok_long:
             return TradeIntent(False, reason="pullback_fail_long", debug=debug)
         if not bullish_close:
@@ -206,6 +230,8 @@ def get_intent(
             return TradeIntent(False, reason="breakout_fail_long", debug=debug)
 
     if trend_ok_short:
+        if not htf_ok_short:
+            return TradeIntent(False, reason="htf_fail_short", debug=debug)
         if not pullback_ok_short:
             return TradeIntent(False, reason="pullback_fail_short", debug=debug)
         if not bearish_close:

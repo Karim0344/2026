@@ -8,7 +8,7 @@ class BotConfig:
     risk_percent: float = 0.5
     daily_stop_percent: float = 2.0
     max_consec_loss: int = 2
-    max_spread_points: int = 35
+    max_spread_points: int = 30
     magic: int = 26022026
 
     # MT5
@@ -23,7 +23,7 @@ class BotConfig:
 
     # AI assist
     ai_enable_scoring: bool = True
-    ai_min_confidence: int = 80
+    ai_min_confidence: int = 70
     ai_memory_path: str = "trade_memory.jsonl"
 
     # Strategy params
@@ -31,9 +31,9 @@ class BotConfig:
     ma_trend: int = 200
     rsi_period: int = 14
     atr_period: int = 14
-    pullback_atr_mult: float = 2.5
+    pullback_atr_mult: float = 2.0
     rsi_long_max: float = 65.0
-    rsi_short_min: float = 35.0
+    rsi_short_min: float = 38.0
     require_breakout: bool = True
     swing_lookback: int = 10
     sl_atr_buffer_mult: float = 0.25

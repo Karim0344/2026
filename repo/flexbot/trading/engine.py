@@ -172,6 +172,21 @@ class TradingEngine:
                     f"CONSEC_LOSS_STOP triggered losses={self.consec_losses}"
                 )
             self.trading_disabled_today = True
+        self._performance_guard()
+
+    def _performance_guard(self):
+        stats = load_paper_stats()
+        closed = int(stats.get("closed", 0))
+        avg_r = float(stats.get("avg_r", 0.0))
+        winrate = float(stats.get("winrate", 0.0))
+
+        if closed >= 20 and avg_r < 0:
+            if not self.trading_disabled_today:
+                logging.warning("PERF_STOP avg_r=%.2f closed=%s", avg_r, closed)
+            self.trading_disabled_today = True
+
+        if closed >= 20 and winrate < 40:
+            logging.warning("PERF_WEAK winrate=%.2f closed=%s", winrate, closed)
 
     def _spread_ok(self) -> bool:
         try:
@@ -250,6 +265,15 @@ class TradingEngine:
                     self.status.loop_state = guard_reason
                     self.status.last_msg = guard_reason
                     self._log_strategy_reason_change(guard_reason)
+                    self._log_strategy_heartbeat()
+                    self.stop_event.wait(self.cfg.entry_check_seconds)
+                    continue
+                now_utc = client.broker_datetime_utc(self.cfg.symbol)
+                hour = now_utc.hour
+                if hour < 7 or hour > 20:
+                    self.status.loop_state = "session_blocked"
+                    self.status.last_msg = "session_blocked"
+                    self._log_strategy_reason_change("session_blocked")
                     self._log_strategy_heartbeat()
                     self.stop_event.wait(self.cfg.entry_check_seconds)
                     continue
@@ -385,9 +409,19 @@ class TradingEngine:
                         is_long=bool(intent.is_long),
                         max_spread_points=self.cfg.max_spread_points,
                     )
+                    ai_decision = "pass"
                     if self.cfg.ai_enable_scoring and confidence < self.cfg.ai_min_confidence:
+                        ai_decision = "blocked"
                         self.status.last_msg = f"ai_score_blocked:{confidence}<{self.cfg.ai_min_confidence}"
                         self._log_strategy_reason_change(self.status.last_msg)
+                        logging.info(
+                            "AI_SCORE score=%s decision=%s min=%s reason=%s features=%s",
+                            confidence,
+                            ai_decision,
+                            self.cfg.ai_min_confidence,
+                            intent.reason,
+                            features,
+                        )
                         logging.info(
                             "AI_SCORE_SKIP batch_id=%s score=%s min=%s reason=%s",
                             intent.batch_id,
@@ -399,6 +433,14 @@ class TradingEngine:
                         self.stop_event.wait(self.cfg.entry_check_seconds)
                         continue
 
+                    logging.info(
+                        "AI_SCORE score=%s decision=%s min=%s reason=%s features=%s",
+                        confidence,
+                        ai_decision,
+                        self.cfg.ai_min_confidence,
+                        intent.reason,
+                        features,
+                    )
                     self.signal_count += 1
                     self.status.signal_count = self.signal_count
                     logging.info("SIGNAL_COUNT=%s day=%s", self.signal_count, self.current_day)
