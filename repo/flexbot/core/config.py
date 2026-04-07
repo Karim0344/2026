@@ -23,7 +23,7 @@ class BotConfig:
 
     # AI assist
     ai_enable_scoring: bool = True
-    ai_min_confidence: int = 70
+    ai_min_confidence: int = 60
     ai_memory_path: str = "trade_memory.jsonl"
 
     # AI selector
@@ -38,7 +38,7 @@ class BotConfig:
     pullback_atr_mult: float = 2.0
     rsi_long_max: float = 65.0
     rsi_short_min: float = 38.0
-    require_breakout: bool = True
+    require_breakout: bool = False
     swing_lookback: int = 10
     sl_atr_buffer_mult: float = 0.25
 

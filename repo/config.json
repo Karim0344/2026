@@ -6,5 +6,5 @@
   "mt5_login": null,
   "mt5_password": "",
   "mt5_server": "",
-  "require_breakout": true
+  "require_breakout": false
 }

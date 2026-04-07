@@ -60,13 +60,13 @@ def detect_regime(symbol: str, timeframe: str, bars: int = 200) -> tuple[Regime,
     if atr <= 0:
         return "dead", debug
 
-    if trend_distance > atr * 1.5 and recent_move > atr * 3:
-        return "trend", debug
-
-    if trend_distance < atr * 0.6 and recent_move < atr * 2:
-        return "range", debug
-
-    if recent_move > atr * 5:
+    if recent_move > atr * 6:
         return "high_volatility", debug
 
-    return "dead", debug
+    if trend_distance > atr * 0.8 and recent_move > atr * 2:
+        return "trend", debug
+
+    if trend_distance < atr * 1.2:
+        return "range", debug
+
+    return "range", debug
