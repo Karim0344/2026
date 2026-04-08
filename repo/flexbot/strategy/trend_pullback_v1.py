@@ -84,8 +84,8 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
     htf_long = _htf_trend_ok(symbol, "H1", cfg.ma_trend, True)
     htf_short = _htf_trend_ok(symbol, "H1", cfg.ma_trend, False)
 
-    pullback_long = low <= ma_fast + atr * 0.2
-    pullback_short = high >= ma_fast - atr * 0.2
+    pullback_long = low <= ma_fast + atr * 0.35
+    pullback_short = high >= ma_fast - atr * 0.35
 
     bullish = close > open_
     bearish = close < open_
@@ -106,6 +106,41 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
 
     session = "london_ny" if 7 <= client.broker_datetime_utc(symbol).hour <= 20 else "off_session"
 
+    trend_score_long = 0
+    trend_score_short = 0
+
+    if trend_long:
+        trend_score_long += 25
+    if trend_short:
+        trend_score_short += 25
+
+    if htf_long:
+        trend_score_long += 15
+    elif trend_long:
+        trend_score_long += 5
+    if htf_short:
+        trend_score_short += 15
+    elif trend_short:
+        trend_score_short += 5
+
+    if pullback_long:
+        trend_score_long += 20
+    if pullback_short:
+        trend_score_short += 20
+
+    if bullish:
+        trend_score_long += 20
+    if bearish:
+        trend_score_short += 20
+
+    if breakout_long:
+        trend_score_long += 20
+    if breakout_short:
+        trend_score_short += 20
+
+    min_score = int(getattr(cfg, "trend_min_score", 65))
+    require_breakout = bool(getattr(cfg, "require_breakout", False))
+
     debug = {
         "symbol": symbol,
         "timeframe": timeframe,
@@ -125,13 +160,21 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
         "pullback": pullback_long or pullback_short,
         "momentum": bullish or bearish,
         "breakout": breakout_long or breakout_short,
+        "require_breakout": require_breakout,
+        "trend_score_long": trend_score_long,
+        "trend_score_short": trend_score_short,
+        "trend_min_score": min_score,
         "body_size": round(body_size, 6),
         "wick_ratio": round(wick_ratio, 6),
         "session": session,
     }
 
-    long_ok = all([trend_long, htf_long, pullback_long, bullish, breakout_long])
-    short_ok = all([trend_short, htf_short, pullback_short, bearish, breakout_short])
+    long_ok = trend_long and pullback_long and bullish and trend_score_long >= min_score
+    short_ok = trend_short and pullback_short and bearish and trend_score_short >= min_score
+
+    if require_breakout:
+        long_ok = long_ok and breakout_long
+        short_ok = short_ok and breakout_short
 
     batch_id = f"{symbol}_{timeframe}_{int(c0['time'])}"
     if long_ok:

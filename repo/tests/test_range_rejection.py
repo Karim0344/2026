@@ -16,8 +16,11 @@ def _build_sideways_rates() -> list[dict]:
         low = base - 0.35
         rates.append(_mk_bar(i, base - 0.05, high, low, base + 0.05))
 
-    # force final closed candle (-2) to look like a top rejection
-    rates[-2] = _mk_bar(258, 100.20, 100.95, 99.95, 100.00)
+    # force prior bars to define a stable top zone
+    rates[-10] = _mk_bar(250, 100.05, 100.55, 99.75, 100.10)
+    rates[-9] = _mk_bar(251, 100.00, 100.56, 99.70, 100.04)
+    # force final closed candle (-2) to fake-break and reclaim from top
+    rates[-2] = _mk_bar(258, 100.65, 101.20, 100.10, 100.30)
     return rates
 
 
@@ -43,3 +46,5 @@ def test_range_intent_emits_short_on_confirmed_top_rejection():
     assert intent.direction == "short"
     assert intent.reason == "RANGE_SHORT"
     assert intent.debug["top_touches"] >= 2
+    assert bool(intent.debug["fake_break_top"]) is True
+    assert bool(intent.debug["reclaim_top"]) is True
