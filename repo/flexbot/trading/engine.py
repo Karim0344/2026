@@ -372,9 +372,10 @@ class TradingEngine:
                 if regime == "dead":
                     self.last_closed_bar_time = closed_bar_time
                     self.status.last_eval_bar_time = closed_bar_time
-                    self.status.last_eval_reason = f"regime_blocked:{regime}"
-                    self.status.loop_state = f"regime_blocked:{regime}"
-                    self.status.last_msg = f"regime_blocked:{regime}"
+                    self.status.last_eval_reason = "skip_dead_regime"
+                    self.status.loop_state = "skip_dead_regime"
+                    self.status.last_msg = "skip_dead_regime"
+                    logging.info("REGIME_SKIP regime=%s debug=%s", regime, regime_debug)
                     self._log_strategy_reason_change(self.status.last_msg)
                     self._log_strategy_heartbeat()
                     self.stop_event.wait(self.cfg.entry_check_seconds)
@@ -383,9 +384,10 @@ class TradingEngine:
                 if regime == "high_volatility":
                     self.last_closed_bar_time = closed_bar_time
                     self.status.last_eval_bar_time = closed_bar_time
-                    self.status.last_eval_reason = f"regime_blocked:{regime}"
-                    self.status.loop_state = f"regime_blocked:{regime}"
-                    self.status.last_msg = f"regime_blocked:{regime}"
+                    self.status.last_eval_reason = "skip_high_vol"
+                    self.status.loop_state = "skip_high_vol"
+                    self.status.last_msg = "skip_high_vol"
+                    logging.info("REGIME_SKIP regime=%s debug=%s", regime, regime_debug)
                     self._log_strategy_reason_change(self.status.last_msg)
                     self._log_strategy_heartbeat()
                     self.stop_event.wait(self.cfg.entry_check_seconds)
@@ -477,7 +479,7 @@ class TradingEngine:
                             min_samples=self.cfg.ai_selector_min_samples,
                         )
 
-                    if selector["block"]:
+                    if selector["block"] and bool(getattr(self.cfg, "ai_selector_blocking", False)):
                         self.status.last_msg = f"ai_selector_blocked:{selector['reason']}"
                         self._log_strategy_reason_change(self.status.last_msg)
                         logging.info(
@@ -493,6 +495,14 @@ class TradingEngine:
                         self._log_strategy_heartbeat()
                         self.stop_event.wait(self.cfg.entry_check_seconds)
                         continue
+                    if selector["block"]:
+                        logging.info(
+                            "AI_SELECTOR_OBSERVE block=true but bypassed batch_id=%s strategy=%s regime=%s reason=%s",
+                            intent.batch_id,
+                            intent.reason,
+                            regime,
+                            selector["reason"],
+                        )
 
                     confidence = max(0, min(100, base_confidence + int(selector["bonus"])))
 
@@ -510,7 +520,11 @@ class TradingEngine:
                     )
 
                     ai_decision = "pass"
-                    if self.cfg.ai_enable_scoring and confidence < self.cfg.ai_min_confidence:
+                    if (
+                        self.cfg.ai_enable_scoring
+                        and bool(getattr(self.cfg, "ai_block_on_confidence", False))
+                        and confidence < self.cfg.ai_min_confidence
+                    ):
                         ai_decision = "blocked"
                         self.status.last_msg = f"ai_score_blocked:{confidence}<{self.cfg.ai_min_confidence}"
                         self._log_strategy_reason_change(self.status.last_msg)
