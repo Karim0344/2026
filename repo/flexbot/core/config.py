@@ -50,3 +50,7 @@ class BotConfig:
     # Loop
     entry_check_seconds: float = 1.0  # check new bar via tick time
     manage_seconds: float = 1.0
+
+    # Session
+    session_start_hour: int = 7
+    session_end_hour: int = 20

@@ -282,7 +282,7 @@ class TradingEngine:
                     continue
                 now_utc = client.broker_datetime_utc(self.cfg.symbol)
                 hour = now_utc.hour
-                if hour < 7 or hour > 20:
+                if hour < self.cfg.session_start_hour or hour > self.cfg.session_end_hour:
                     self.status.loop_state = "session_blocked"
                     self.status.last_msg = "session_blocked"
                     self._log_strategy_reason_change("session_blocked")
@@ -370,27 +370,15 @@ class TradingEngine:
                 regime, regime_debug = detect_regime(self.cfg.symbol, self.cfg.timeframe)
 
                 if regime == "dead":
-                    spread_points = self.cfg.max_spread_points + 1
-                    try:
-                        spread_points = int(
-                            client.get_symbol_diagnostics(self.cfg.symbol).spread_points
-                        )
-                    except Exception:
-                        pass
-
-                    if spread_points > self.cfg.max_spread_points:
-                        self.last_closed_bar_time = closed_bar_time
-                        self.status.last_eval_bar_time = closed_bar_time
-                        self.status.last_eval_reason = f"regime_blocked:{regime}_spread"
-                        self.status.loop_state = f"regime_blocked:{regime}_spread"
-                        self.status.last_msg = (
-                            f"regime_blocked:{regime}_spread:{spread_points}>{self.cfg.max_spread_points}"
-                        )
-                        self._log_strategy_reason_change(self.status.last_msg)
-                        self._log_strategy_heartbeat()
-                        self.stop_event.wait(self.cfg.entry_check_seconds)
-                        continue
-                    regime = "range"
+                    self.last_closed_bar_time = closed_bar_time
+                    self.status.last_eval_bar_time = closed_bar_time
+                    self.status.last_eval_reason = f"regime_blocked:{regime}"
+                    self.status.loop_state = f"regime_blocked:{regime}"
+                    self.status.last_msg = f"regime_blocked:{regime}"
+                    self._log_strategy_reason_change(self.status.last_msg)
+                    self._log_strategy_heartbeat()
+                    self.stop_event.wait(self.cfg.entry_check_seconds)
+                    continue
 
                 if regime == "high_volatility":
                     self.last_closed_bar_time = closed_bar_time

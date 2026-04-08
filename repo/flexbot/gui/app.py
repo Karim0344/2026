@@ -83,6 +83,10 @@ class App:
             self.cfg.max_spread_points = int(jc.get("max_spread_points"))
         if jc.get("magic") is not None:
             self.cfg.magic = int(jc.get("magic"))
+        if jc.get("session_start_hour") is not None:
+            self.cfg.session_start_hour = int(jc.get("session_start_hour"))
+        if jc.get("session_end_hour") is not None:
+            self.cfg.session_end_hour = int(jc.get("session_end_hour"))
         self.engine: TradingEngine | None = None
         self._busy = False
         self.advanced_visible = False
@@ -270,6 +274,8 @@ class App:
                 "daily_stop_percent": self.cfg.daily_stop_percent,
                 "max_spread_points": self.cfg.max_spread_points,
                 "magic": self.cfg.magic,
+                "session_start_hour": self.cfg.session_start_hour,
+                "session_end_hour": self.cfg.session_end_hour,
                 "require_breakout": self.cfg.require_breakout,
             }
         )
