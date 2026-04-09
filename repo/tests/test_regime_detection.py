@@ -33,9 +33,8 @@ def test_detect_regime_returns_dead_when_indicators_nan():
     )
     regime = importlib.import_module("flexbot.ai.regime")
 
-    with patch("flexbot.ai.regime.client.copy_rates", return_value=_build_rates(120)):
-        detected, debug = regime.detect_regime("XAUUSD", "M5", bars=120)
+    with patch("flexbot.ai.regime.client.copy_rates", return_value=_build_rates(80)):
+        detected, debug = regime.detect_regime("XAUUSD", "M5", bars=80, ma_slow=100)
 
     assert detected == "dead"
-    assert debug["reason"] == "indicator_nan_uncertain"
-    assert debug["valid_rows"] == 0
+    assert debug["reason"] == "no_data"

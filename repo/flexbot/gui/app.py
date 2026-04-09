@@ -57,36 +57,7 @@ class App:
 
         self.cfg = BotConfig()
         jc = _load_json_config()
-        if jc.get("terminal_path"):
-            self.cfg.terminal_path = str(jc.get("terminal_path"))
-        if jc.get("auto_resolve_symbol") is not None:
-            self.cfg.auto_resolve_symbol = bool(jc.get("auto_resolve_symbol"))
-        if jc.get("symbol"):
-            self.cfg.symbol = str(jc.get("symbol"))
-        if jc.get("paper_mode") is not None:
-            self.cfg.paper_mode = bool(jc.get("paper_mode"))
-        if jc.get("require_breakout") is not None:
-            self.cfg.require_breakout = bool(jc.get("require_breakout"))
-        if jc.get("timeframe"):
-            self.cfg.timeframe = str(jc.get("timeframe"))
-        if jc.get("mt5_login"):
-            self.cfg.mt5_login = int(jc.get("mt5_login"))
-        if jc.get("mt5_server"):
-            self.cfg.mt5_server = str(jc.get("mt5_server"))
-        if jc.get("mt5_password"):
-            self.cfg.mt5_password = str(jc.get("mt5_password"))
-        if jc.get("risk_percent") is not None:
-            self.cfg.risk_percent = float(jc.get("risk_percent"))
-        if jc.get("daily_stop_percent") is not None:
-            self.cfg.daily_stop_percent = float(jc.get("daily_stop_percent"))
-        if jc.get("max_spread_points") is not None:
-            self.cfg.max_spread_points = int(jc.get("max_spread_points"))
-        if jc.get("magic") is not None:
-            self.cfg.magic = int(jc.get("magic"))
-        if jc.get("session_start_hour") is not None:
-            self.cfg.session_start_hour = int(jc.get("session_start_hour"))
-        if jc.get("session_end_hour") is not None:
-            self.cfg.session_end_hour = int(jc.get("session_end_hour"))
+        self.cfg.apply_overrides(jc)
         self.engine: TradingEngine | None = None
         self._busy = False
         self.advanced_visible = False
@@ -260,25 +231,7 @@ class App:
         self.cfg.magic = int(self.magic_var.get())
         self.cfg.require_breakout = bool(self.breakout_var.get())
 
-        _save_json_config(
-            {
-                "terminal_path": self.cfg.terminal_path,
-                "auto_resolve_symbol": self.cfg.auto_resolve_symbol,
-                "symbol": self.cfg.symbol,
-                "timeframe": self.cfg.timeframe,
-                "paper_mode": self.cfg.paper_mode,
-                "mt5_login": self.cfg.mt5_login,
-                "mt5_server": self.cfg.mt5_server,
-                "mt5_password": self.cfg.mt5_password,
-                "risk_percent": self.cfg.risk_percent,
-                "daily_stop_percent": self.cfg.daily_stop_percent,
-                "max_spread_points": self.cfg.max_spread_points,
-                "magic": self.cfg.magic,
-                "session_start_hour": self.cfg.session_start_hour,
-                "session_end_hour": self.cfg.session_end_hour,
-                "require_breakout": self.cfg.require_breakout,
-            }
-        )
+        _save_json_config(self.cfg.to_dict())
 
     def _toggle_advanced(self):
         self.advanced_visible = not self.advanced_visible
