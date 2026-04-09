@@ -67,3 +67,31 @@ class BotConfig:
     # Session
     session_start_hour: int = 7
     session_end_hour: int = 20
+
+    def apply_overrides(self, raw: dict) -> None:
+        for key in self.__dataclass_fields__:
+            if key not in raw:
+                continue
+
+            value = raw.get(key)
+            if value is None:
+                setattr(self, key, None)
+                continue
+
+            current = getattr(self, key)
+            try:
+                if isinstance(current, bool):
+                    setattr(self, key, bool(value))
+                elif isinstance(current, int):
+                    setattr(self, key, int(value))
+                elif isinstance(current, float):
+                    setattr(self, key, float(value))
+                elif isinstance(current, str):
+                    setattr(self, key, str(value))
+                else:
+                    setattr(self, key, value)
+            except (TypeError, ValueError):
+                setattr(self, key, value)
+
+    def to_dict(self) -> dict:
+        return {key: getattr(self, key) for key in self.__dataclass_fields__}

@@ -367,7 +367,12 @@ class TradingEngine:
                     self.status.paper_sl,
                 )
 
-                regime, regime_debug = detect_regime(self.cfg.symbol, self.cfg.timeframe)
+                regime, regime_debug = detect_regime(
+                    self.cfg.symbol,
+                    self.cfg.timeframe,
+                    ma_fast=self.cfg.ma_fast,
+                    ma_slow=self.cfg.ma_trend,
+                )
 
                 if regime == "dead":
                     self.last_closed_bar_time = closed_bar_time
