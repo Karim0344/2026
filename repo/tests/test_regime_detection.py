@@ -20,7 +20,7 @@ def _build_rates(n: int, start: float = 2000.0):
     return rates
 
 
-def test_detect_regime_falls_back_to_range_when_indicators_nan():
+def test_detect_regime_returns_dead_when_indicators_nan():
     sys.modules.setdefault(
         "MetaTrader5",
         SimpleNamespace(
@@ -36,6 +36,6 @@ def test_detect_regime_falls_back_to_range_when_indicators_nan():
     with patch("flexbot.ai.regime.client.copy_rates", return_value=_build_rates(120)):
         detected, debug = regime.detect_regime("XAUUSD", "M5", bars=120)
 
-    assert detected == "range"
-    assert debug["reason"] == "indicator_nan_fallback"
+    assert detected == "dead"
+    assert debug["reason"] == "indicator_nan_uncertain"
     assert debug["valid_rows"] == 0
