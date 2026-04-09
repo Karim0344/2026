@@ -164,6 +164,8 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
         "trend_score_long": trend_score_long,
         "trend_score_short": trend_score_short,
         "trend_min_score": min_score,
+        "long_score_gap": int(trend_score_long - min_score),
+        "short_score_gap": int(trend_score_short - min_score),
         "body_size": round(body_size, 6),
         "wick_ratio": round(wick_ratio, 6),
         "session": session,
@@ -183,4 +185,7 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
     if short_ok:
         return TradeIntent(True, False, entry=entry, sl=sl_short, batch_id=batch_id, reason="PRO_SHORT", debug=debug)
 
-    return TradeIntent(False, entry=entry, batch_id=batch_id, reason="no_signal", debug=debug)
+    fail_reason = "trend_fail"
+    if trend_score_long >= max(min_score - 10, 0) or trend_score_short >= max(min_score - 10, 0):
+        fail_reason = "trend_near_signal"
+    return TradeIntent(False, entry=entry, batch_id=batch_id, reason=fail_reason, debug=debug)

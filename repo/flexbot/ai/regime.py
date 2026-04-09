@@ -41,7 +41,7 @@ def detect_regime(symbol: str, timeframe: str, bars: int = 400) -> tuple[Regime,
 
     if np.isnan(c0["ma50"]) or np.isnan(c0["ma200"]) or np.isnan(c0["atr14"]):
         fallback_debug = {
-            "reason": "indicator_nan_fallback",
+            "reason": "indicator_nan_uncertain",
             "bars": int(len(df)),
             "valid_rows": valid_rows,
         }
@@ -55,7 +55,7 @@ def detect_regime(symbol: str, timeframe: str, bars: int = 400) -> tuple[Regime,
                     "last_valid_atr": round(float(last_valid["atr14"]), 5),
                 }
             )
-        return "range", fallback_debug
+        return "dead", fallback_debug
 
     close0 = float(c0["close"])
     ma50 = float(c0["ma50"])

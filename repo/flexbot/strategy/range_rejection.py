@@ -21,8 +21,16 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
         return Intent(None, 0.0, 0.0, "no_data", {})
 
     df = pd.DataFrame(rates)
-    lookback = 60
-    touch_tol_mult = 0.2
+    lookback = int(getattr(cfg, "range_lookback", 60))
+    touch_tol_mult = float(getattr(cfg, "range_touch_tol_mult", 0.2))
+    min_atr_ratio = float(getattr(cfg, "range_min_atr_ratio", 1.3))
+    max_atr_ratio = float(getattr(cfg, "range_max_atr_ratio", 6.5))
+    required_touches = int(getattr(cfg, "range_required_touches", 1))
+    mid_low = float(getattr(cfg, "range_mid_low", 0.35))
+    mid_high = float(getattr(cfg, "range_mid_high", 0.65))
+    weak_body_min = float(getattr(cfg, "range_weak_body_min", 0.15))
+    break_buffer_mult = float(getattr(cfg, "range_break_buffer_mult", 0.1))
+    wick_body_min = float(getattr(cfg, "range_wick_body_min", 1.15))
 
     zone_slice = df.iloc[-(lookback + 3):-3]
     high_zone = float(zone_slice["high"].max())
@@ -69,12 +77,12 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
     close_pos = (close - low_zone) / max(range_width, 1e-9)
     near_top = high >= (high_zone - touch_tol)
     near_bottom = low <= (low_zone + touch_tol)
-    break_buffer = atr * 0.12
+    break_buffer = atr * break_buffer_mult
     fake_break_top = high > (high_zone + break_buffer)
     fake_break_bottom = low < (low_zone - break_buffer)
     reclaim_from_top = close < high_zone and float(c1["close"]) <= high_zone
     reclaim_from_bottom = close > low_zone and float(c1["close"]) >= low_zone
-    in_middle = 0.35 <= close_pos <= 0.65
+    in_middle = mid_low <= close_pos <= mid_high
 
     debug = {
         "high_zone": round(high_zone, 5),
@@ -96,32 +104,47 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
         "reclaim_bottom": reclaim_from_bottom,
         "close_pos": round(float(close_pos), 4),
         "in_middle": in_middle,
+        "range_min_atr_ratio": round(min_atr_ratio, 3),
+        "range_max_atr_ratio": round(max_atr_ratio, 3),
+        "required_touches": required_touches,
+        "mid_low": round(mid_low, 3),
+        "mid_high": round(mid_high, 3),
+        "weak_body_min": round(weak_body_min, 3),
+        "break_buffer_mult": round(break_buffer_mult, 3),
+        "wick_body_min": round(wick_body_min, 3),
     }
 
-    if atr_ratio < 1.6 or atr_ratio > 6.0:
+    if atr_ratio < min_atr_ratio or atr_ratio > max_atr_ratio:
+        debug["min_required"] = round(min_atr_ratio, 3)
+        debug["max_allowed"] = round(max_atr_ratio, 3)
         return Intent(None, close, 0.0, "range_width_invalid", debug)
 
-    if top_touches < 2 or bottom_touches < 2:
+    if top_touches < required_touches or bottom_touches < required_touches:
+        debug["required_top_touches"] = required_touches
+        debug["required_bottom_touches"] = required_touches
         return Intent(None, close, 0.0, "range_not_confirmed", debug)
 
     if in_middle:
+        debug["required_edge"] = f"<{mid_low:.2f} or >{mid_high:.2f}"
         return Intent(None, close, 0.0, "mid_range_candle", debug)
 
-    if body < (range_ * 0.18):
+    body_min = range_ * weak_body_min
+    debug["body_min_required"] = round(body_min, 5)
+    if body < body_min:
         return Intent(None, close, 0.0, "weak_candle", debug)
 
     bearish_rejection = (
         near_top
         and fake_break_top
         and reclaim_from_top
-        and wick_top > body * 1.3
+        and wick_top > body * wick_body_min
         and close < open_
     )
     bullish_rejection = (
         near_bottom
         and fake_break_bottom
         and reclaim_from_bottom
-        and wick_bottom > body * 1.3
+        and wick_bottom > body * wick_body_min
         and close > open_
     )
 
