@@ -61,6 +61,7 @@ def _deal_profit_for_comment(
 def manage_batch(
     state: BatchState,
     be_buffer_points: int,
+    be_trigger_r: float,
     trail_atr_mult: float,
     trail_step_atr_mult: float,
     atr_period: int,
@@ -84,8 +85,13 @@ def manage_batch(
 
     tp1_open = _pos_exists(state.pos1_ticket)
     tp1_price_hit = (float(tick.bid) >= state.tp1) if state.is_long else (float(tick.ask) <= state.tp1)
+    r_value = abs(state.entry_price - state.sl_price)
+    move_r = 0.0
+    if r_value > 0:
+        px = float(tick.bid) if state.is_long else float(tick.ask)
+        move_r = (px - state.entry_price) / r_value if state.is_long else (state.entry_price - px) / r_value
 
-    if (not state.be_applied) and (not tp1_open):
+    if (not state.be_applied) and (not tp1_open) and move_r >= be_trigger_r:
         prof = _deal_profit_for_comment(symbol, tp1_comment, day_start, now)
         tp1_confirmed = prof > 0 or tp1_price_hit
         if tp1_confirmed:
@@ -111,6 +117,14 @@ def manage_batch(
             state.be_applied = True
             if changed:
                 save_state(state)
+        else:
+            logging.info(
+                "BE_WAITING id=%s move_r=%.2f tp1_open=%s tp1_hit=%s",
+                state.batch_id,
+                move_r,
+                tp1_open,
+                tp1_price_hit,
+            )
 
     if state.be_applied:
         rates = client.copy_rates(symbol, timeframe, max(atr_period + 5, 200))

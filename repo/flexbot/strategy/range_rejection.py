@@ -80,8 +80,10 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
     break_buffer = atr * break_buffer_mult
     fake_break_top = high > (high_zone + break_buffer)
     fake_break_bottom = low < (low_zone - break_buffer)
-    reclaim_from_top = close < high_zone and float(c1["close"]) <= high_zone
-    reclaim_from_bottom = close > low_zone and float(c1["close"]) >= low_zone
+    reclaim_from_top = close < high_zone
+    reclaim_from_bottom = close > low_zone
+    reclaim_from_top_strict = float(c1["close"]) <= high_zone
+    reclaim_from_bottom_strict = float(c1["close"]) >= low_zone
     in_middle = mid_low <= close_pos <= mid_high
 
     debug = {
@@ -102,6 +104,8 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
         "fake_break_bottom": fake_break_bottom,
         "reclaim_top": reclaim_from_top,
         "reclaim_bottom": reclaim_from_bottom,
+        "reclaim_top_strict": reclaim_from_top_strict,
+        "reclaim_bottom_strict": reclaim_from_bottom_strict,
         "close_pos": round(float(close_pos), 4),
         "in_middle": in_middle,
         "range_min_atr_ratio": round(min_atr_ratio, 3),
@@ -126,6 +130,13 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
 
     if in_middle:
         debug["required_edge"] = f"<{mid_low:.2f} or >{mid_high:.2f}"
+        debug["mid_block"] = {
+            "close_pos": round(float(close_pos), 4),
+            "fake_break_top": bool(fake_break_top),
+            "fake_break_bottom": bool(fake_break_bottom),
+            "reclaim_top": bool(reclaim_from_top),
+            "reclaim_bottom": bool(reclaim_from_bottom),
+        }
         return Intent(None, close, 0.0, "mid_range_candle", debug)
 
     body_min = range_ * weak_body_min
@@ -136,14 +147,14 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
     bearish_rejection = (
         near_top
         and fake_break_top
-        and reclaim_from_top
+        and (reclaim_from_top or reclaim_from_top_strict)
         and wick_top > body * wick_body_min
         and close < open_
     )
     bullish_rejection = (
         near_bottom
         and fake_break_bottom
-        and reclaim_from_bottom
+        and (reclaim_from_bottom or reclaim_from_bottom_strict)
         and wick_bottom > body * wick_body_min
         and close > open_
     )
