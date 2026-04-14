@@ -81,6 +81,12 @@ def open_batch(
     sl: float,
     risk_percent: float,
     be_buf_points: int,
+    tp1_r_multiple: float = 1.0,
+    tp2_r_multiple: float = 2.2,
+    tp3_r_multiple: float = 3.2,
+    tp1_size_ratio: float = 0.30,
+    tp2_size_ratio: float = 0.35,
+    tp3_size_ratio: float = 0.35,
 ) -> tuple[BatchState, ExecResult]:
     del be_buf_points
     client.ensure_symbol(symbol)
@@ -92,10 +98,15 @@ def open_batch(
 
     equity = client.account_equity()
     risk_total = equity * (risk_percent / 100.0)
-    risk_per = risk_total / 3.0
+    size_sum = tp1_size_ratio + tp2_size_ratio + tp3_size_ratio
+    if size_sum <= 0:
+        return BatchState(), ExecResult(False, "invalid_tp_size_ratios")
+    tp1_size_ratio /= size_sum
+    tp2_size_ratio /= size_sum
+    tp3_size_ratio /= size_sum
 
     try:
-        lot = calc_lot(symbol, risk_per, entry, sl).lot
+        total_lot = calc_lot(symbol, risk_total, entry, sl).lot
     except Exception as e:
         return BatchState(), ExecResult(False, f"lot_calc_failed: {e}")
 
@@ -106,27 +117,29 @@ def open_batch(
     if r_value <= 0:
         return BatchState(), ExecResult(False, "invalid_R")
 
-    tp1 = entry + r_value if is_long else entry - r_value
-    tp2 = entry + (2.0 * r_value) if is_long else entry - (2.0 * r_value)
-    tp3 = entry + (3.0 * r_value) if is_long else entry - (3.0 * r_value)
+    tp1 = entry + (tp1_r_multiple * r_value) if is_long else entry - (tp1_r_multiple * r_value)
+    tp2 = entry + (tp2_r_multiple * r_value) if is_long else entry - (tp2_r_multiple * r_value)
+    tp3 = entry + (tp3_r_multiple * r_value) if is_long else entry - (tp3_r_multiple * r_value)
 
     deviation = 20
     filling = _allowed_filling(symbol)
     order_type = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
 
     legs = [
-        (f"FlexBot|{batch_id}|TP1", tp1),
-        (f"FlexBot|{batch_id}|TP2", tp2),
-        (f"FlexBot|{batch_id}|TP3", tp3),
+        (f"FlexBot|{batch_id}|TP1", tp1, total_lot * tp1_size_ratio),
+        (f"FlexBot|{batch_id}|TP2", tp2, total_lot * tp2_size_ratio),
+        (f"FlexBot|{batch_id}|TP3", tp3, total_lot * tp3_size_ratio),
     ]
 
     opened_comments: list[str] = []
 
-    for i, (comment, tp) in enumerate(legs, start=1):
+    for i, (comment, tp, leg_lot) in enumerate(legs, start=1):
+        if leg_lot <= 0:
+            continue
         req = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
-            "volume": float(lot),
+            "volume": float(leg_lot),
             "type": order_type,
             "price": entry,
             "sl": float(sl),
@@ -172,12 +185,12 @@ def open_batch(
     )
     save_state(state)
     logging.info(
-        "BATCH_OPENED id=%s long=%s entry=%s sl=%s lot=%s tp1/2/3=%s,%s,%s",
+        "BATCH_OPENED id=%s long=%s entry=%s sl=%s lot_total=%s tp1/2/3=%s,%s,%s",
         batch_id,
         is_long,
         entry,
         sl,
-        lot,
+        total_lot,
         tp1,
         tp2,
         tp3,

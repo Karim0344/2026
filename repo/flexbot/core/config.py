@@ -23,7 +23,7 @@ class BotConfig:
 
     # AI assist
     ai_enable_scoring: bool = True
-    ai_min_confidence: int = 45
+    ai_min_confidence: int = 40
     ai_block_on_confidence: bool = False
     ai_memory_path: str = "trade_memory.jsonl"
 
@@ -41,7 +41,7 @@ class BotConfig:
     rsi_long_max: float = 65.0
     rsi_short_min: float = 38.0
     require_breakout: bool = False
-    trend_min_score: int = 65
+    trend_min_score: int = 60
     swing_lookback: int = 10
     sl_atr_buffer_mult: float = 0.25
     range_lookback: int = 60
@@ -49,16 +49,25 @@ class BotConfig:
     range_min_atr_ratio: float = 1.3
     range_max_atr_ratio: float = 6.5
     range_required_touches: int = 1
-    range_mid_low: float = 0.35
-    range_mid_high: float = 0.65
+    range_mid_low: float = 0.40
+    range_mid_high: float = 0.60
     range_weak_body_min: float = 0.15
     range_break_buffer_mult: float = 0.1
     range_wick_body_min: float = 1.15
 
     # Management
     be_buffer_points: int = 2
+    be_trigger_r: float = 1.2
     trail_atr_mult: float = 1.0
     trail_step_atr_mult: float = 0.25
+
+    # TP profile
+    tp1_r_multiple: float = 1.0
+    tp2_r_multiple: float = 2.2
+    tp3_r_multiple: float = 3.2
+    tp1_size_ratio: float = 0.30
+    tp2_size_ratio: float = 0.35
+    tp3_size_ratio: float = 0.35
 
     # Loop
     entry_check_seconds: float = 1.0  # check new bar via tick time

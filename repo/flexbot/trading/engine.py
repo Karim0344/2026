@@ -330,21 +330,20 @@ class TradingEngine:
                 )
                 for trade in updates:
                     if trade.status in ("sl_hit", "tp1_hit", "tp2_hit", "tp3_hit"):
-                        rr_realized = -1.0 if trade.status == "sl_hit" else (
-                            1.0 if trade.status == "tp1_hit" else (
-                                2.0 if trade.status == "tp2_hit" else 3.0
-                            )
-                        )
+                        rr_realized = float(getattr(trade, "result_r", 0.0))
                         log_trade_close(
                             trade=trade,
                             result_r=rr_realized,
                             path=self.cfg.ai_memory_path,
                         )
                         logging.info(
-                            "PAPER_CLOSE batch_id=%s final_status=%s rr_realized=%.2f",
+                            "PAPER_CLOSE batch_id=%s final_status=%s exit_reason=%s rr_realized=%.2f mfe_r=%.2f mae_r=%.2f",
                             trade.batch_id,
                             trade.status,
+                            trade.exit_reason,
                             rr_realized,
+                            float(getattr(trade, "mfe_r", 0.0)),
+                            float(getattr(trade, "mae_r", 0.0)),
                         )
                     else:
                         logging.info(
@@ -365,6 +364,12 @@ class TradingEngine:
                     self.status.paper_tp2,
                     self.status.paper_tp3,
                     self.status.paper_sl,
+                )
+                stats = load_paper_stats()
+                logging.info(
+                    "PAPER_STRATEGY_SUMMARY by_strategy=%s by_side=%s",
+                    stats.get("by_strategy", {}),
+                    stats.get("by_side", {}),
                 )
 
                 regime, regime_debug = detect_regime(
@@ -398,7 +403,7 @@ class TradingEngine:
                     self.stop_event.wait(self.cfg.entry_check_seconds)
                     continue
 
-                if regime == "trend":
+                if regime in ("trend", "trend_overextended"):
                     intent = trend_intent(
                         symbol=self.cfg.symbol,
                         timeframe=self.cfg.timeframe,
@@ -418,6 +423,17 @@ class TradingEngine:
                         reason=range_intent.reason,
                         debug=range_intent.debug,
                     )
+                elif regime in ("range_breakout_pressure_up", "range_breakout_pressure_down"):
+                    self.last_closed_bar_time = closed_bar_time
+                    self.status.last_eval_bar_time = closed_bar_time
+                    self.status.last_eval_reason = f"skip_{regime}"
+                    self.status.loop_state = f"skip_{regime}"
+                    self.status.last_msg = f"skip_{regime}"
+                    logging.info("REGIME_SKIP regime=%s debug=%s", regime, regime_debug)
+                    self._log_strategy_reason_change(self.status.last_msg)
+                    self._log_strategy_heartbeat()
+                    self.stop_event.wait(self.cfg.entry_check_seconds)
+                    continue
                 else:
                     self.status.loop_state = f"skip:{regime}"
                     self.status.last_msg = f"skip:{regime}"
@@ -592,6 +608,7 @@ class TradingEngine:
                                 signal_reason=intent.reason,
                                 confidence_score=confidence,
                                 features=features,
+                                initial_r=abs(entry - float(intent.sl)),
                             )
                             upsert_paper_trade(trade)
                             log_trade_open(trade=trade, path=self.cfg.ai_memory_path)
@@ -619,6 +636,12 @@ class TradingEngine:
                             sl=intent.sl,
                             risk_percent=self.cfg.risk_percent,
                             be_buf_points=self.cfg.be_buffer_points,
+                            tp1_r_multiple=self.cfg.tp1_r_multiple,
+                            tp2_r_multiple=self.cfg.tp2_r_multiple,
+                            tp3_r_multiple=self.cfg.tp3_r_multiple,
+                            tp1_size_ratio=self.cfg.tp1_size_ratio,
+                            tp2_size_ratio=self.cfg.tp2_size_ratio,
+                            tp3_size_ratio=self.cfg.tp3_size_ratio,
                         )
                         if res.ok:
                             self.state = st
@@ -644,6 +667,7 @@ class TradingEngine:
                     self.state = manage_batch(
                         state=self.state,
                         be_buffer_points=self.cfg.be_buffer_points,
+                        be_trigger_r=self.cfg.be_trigger_r,
                         trail_atr_mult=self.cfg.trail_atr_mult,
                         trail_step_atr_mult=self.cfg.trail_step_atr_mult,
                         atr_period=self.cfg.atr_period,

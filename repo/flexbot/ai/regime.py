@@ -5,7 +5,15 @@ import pandas as pd
 
 from flexbot.mt5 import client
 
-Regime = Literal["trend", "range", "high_volatility", "dead"]
+Regime = Literal[
+    "trend",
+    "trend_overextended",
+    "range",
+    "range_breakout_pressure_up",
+    "range_breakout_pressure_down",
+    "high_volatility",
+    "dead",
+]
 
 
 def _sma(series: pd.Series, n: int) -> pd.Series:
@@ -78,6 +86,7 @@ def detect_regime(
 
     trend_distance = abs(fast_ma - slow_ma)
     recent_move = abs(float(c0["close"]) - float(c10["close"]))
+    move_dir = float(c0["close"]) - float(c10["close"])
 
     debug = {
         "close": round(close0, 5),
@@ -90,6 +99,7 @@ def detect_regime(
         "recent_move": round(recent_move, 5),
         "ma_fast_period": ma_fast,
         "ma_slow_period": ma_slow,
+        "move_dir": round(move_dir, 5),
     }
 
     if atr <= 0:
@@ -98,10 +108,24 @@ def detect_regime(
     if recent_move > atr * 6:
         return "high_volatility", debug
 
+    if trend_distance > atr * 0.8 and recent_move > atr * 3.6:
+        return "trend_overextended", debug
+
     if trend_distance > atr * 0.8 and recent_move > atr * 2:
         return "trend", debug
 
     if trend_distance < atr * 1.2:
+        recent_high = float(df["high"].iloc[-22:-2].max())
+        recent_low = float(df["low"].iloc[-22:-2].min())
+        zone_width = max(recent_high - recent_low, 1e-9)
+        close_pos = (close0 - recent_low) / zone_width
+        debug["close_pos"] = round(close_pos, 4)
+        debug["recent_high"] = round(recent_high, 5)
+        debug["recent_low"] = round(recent_low, 5)
+        if close_pos > 0.83 and move_dir > atr * 1.3:
+            return "range_breakout_pressure_up", debug
+        if close_pos < 0.17 and move_dir < -(atr * 1.3):
+            return "range_breakout_pressure_down", debug
         return "range", debug
 
     return "range", debug
