@@ -85,6 +85,8 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
     reclaim_from_top_strict = float(c1["close"]) <= high_zone
     reclaim_from_bottom_strict = float(c1["close"]) >= low_zone
     in_middle = mid_low <= close_pos <= mid_high
+    middle_override_top = fake_break_top and (reclaim_from_top or reclaim_from_top_strict)
+    middle_override_bottom = fake_break_bottom and (reclaim_from_bottom or reclaim_from_bottom_strict)
 
     debug = {
         "high_zone": round(high_zone, 5),
@@ -108,6 +110,8 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
         "reclaim_bottom_strict": reclaim_from_bottom_strict,
         "close_pos": round(float(close_pos), 4),
         "in_middle": in_middle,
+        "middle_override_top": middle_override_top,
+        "middle_override_bottom": middle_override_bottom,
         "range_min_atr_ratio": round(min_atr_ratio, 3),
         "range_max_atr_ratio": round(max_atr_ratio, 3),
         "required_touches": required_touches,
@@ -128,7 +132,7 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
         debug["required_bottom_touches"] = required_touches
         return Intent(None, close, 0.0, "range_not_confirmed", debug)
 
-    if in_middle:
+    if in_middle and not (middle_override_top or middle_override_bottom):
         debug["required_edge"] = f"<{mid_low:.2f} or >{mid_high:.2f}"
         debug["mid_block"] = {
             "close_pos": round(float(close_pos), 4),

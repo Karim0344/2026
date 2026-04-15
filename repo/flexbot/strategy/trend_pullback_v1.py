@@ -139,6 +139,8 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
         trend_score_short += 20
 
     min_score = int(getattr(cfg, "trend_min_score", 65))
+    paper_relax = int(getattr(cfg, "paper_trend_score_relax", 0)) if bool(getattr(cfg, "paper_mode", False)) else 0
+    effective_min_score = max(min_score - max(paper_relax, 0), 0)
     require_breakout = bool(getattr(cfg, "require_breakout", False))
 
     debug = {
@@ -164,6 +166,9 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
         "trend_score_long": trend_score_long,
         "trend_score_short": trend_score_short,
         "trend_min_score": min_score,
+        "effective_min_score": effective_min_score,
+        "paper_mode": bool(getattr(cfg, "paper_mode", False)),
+        "paper_trend_score_relax": paper_relax,
         "long_score_gap": int(trend_score_long - min_score),
         "short_score_gap": int(trend_score_short - min_score),
         "body_size": round(body_size, 6),
@@ -171,8 +176,8 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
         "session": session,
     }
 
-    long_ok = trend_long and pullback_long and bullish and trend_score_long >= min_score
-    short_ok = trend_short and pullback_short and bearish and trend_score_short >= min_score
+    long_ok = trend_long and pullback_long and bullish and trend_score_long >= effective_min_score
+    short_ok = trend_short and pullback_short and bearish and trend_score_short >= effective_min_score
 
     if require_breakout:
         long_ok = long_ok and breakout_long
@@ -180,9 +185,15 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
 
     batch_id = f"{symbol}_{timeframe}_{int(c0['time'])}"
     if long_ok:
+        if trend_score_long < min_score and effective_min_score < min_score:
+            debug["paper_relaxed_entry"] = True
+            return TradeIntent(True, True, entry=entry, sl=sl_long, batch_id=batch_id, reason="PRO_LONG_PAPER", debug=debug)
         return TradeIntent(True, True, entry=entry, sl=sl_long, batch_id=batch_id, reason="PRO_LONG", debug=debug)
 
     if short_ok:
+        if trend_score_short < min_score and effective_min_score < min_score:
+            debug["paper_relaxed_entry"] = True
+            return TradeIntent(True, False, entry=entry, sl=sl_short, batch_id=batch_id, reason="PRO_SHORT_PAPER", debug=debug)
         return TradeIntent(True, False, entry=entry, sl=sl_short, batch_id=batch_id, reason="PRO_SHORT", debug=debug)
 
     fail_reason = "trend_fail"
