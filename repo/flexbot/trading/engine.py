@@ -46,6 +46,9 @@ class EngineStatus:
     paper_tp2: int = 0
     paper_tp3: int = 0
     paper_sl: int = 0
+    session_block_count: int = 0
+    spread_block_count: int = 0
+    processed_bars: int = 0
 
 
 class TradingEngine:
@@ -71,6 +74,10 @@ class TradingEngine:
         self._entry_thread: threading.Thread | None = None
         self._manage_thread: threading.Thread | None = None
         self._last_optimizer_check = 0.0
+        self.session_block_count = 0
+        self.spread_block_count = 0
+        self.processed_bars = 0
+        self._last_block_diag = 0.0
 
     def start(self):
         mt5_initialize_started = False
@@ -237,6 +244,8 @@ class TradingEngine:
         try:
             diag = client.get_symbol_diagnostics(self.cfg.symbol)
             if diag.spread_points > self.cfg.max_spread_points:
+                self.spread_block_count += 1
+                self.status.spread_block_count = self.spread_block_count
                 return (
                     False,
                     f"spread_blocked:{diag.spread_points}>{self.cfg.max_spread_points}",
@@ -248,6 +257,27 @@ class TradingEngine:
             return False, f"symbol_error:{e}"
 
         return True, "ok"
+
+    def _log_filter_diagnostics(self, force: bool = False):
+        now = time.time()
+        if not force and (now - self._last_block_diag) < 60:
+            return
+        self._last_block_diag = now
+
+        total_checks = self.processed_bars + self.session_block_count + self.spread_block_count
+        if total_checks <= 0:
+            return
+        session_pct = (self.session_block_count / total_checks) * 100.0
+        spread_pct = (self.spread_block_count / total_checks) * 100.0
+        logging.info(
+            "ENTRY_FILTERS checks=%s processed_bars=%s session_blocked=%s(%.1f%%) spread_blocked=%s(%.1f%%)",
+            total_checks,
+            self.processed_bars,
+            self.session_block_count,
+            session_pct,
+            self.spread_block_count,
+            spread_pct,
+        )
 
     def _log_strategy_heartbeat(self):
         now = time.time()
@@ -283,9 +313,12 @@ class TradingEngine:
                 now_utc = client.broker_datetime_utc(self.cfg.symbol)
                 hour = now_utc.hour
                 if hour < self.cfg.session_start_hour or hour > self.cfg.session_end_hour:
+                    self.session_block_count += 1
+                    self.status.session_block_count = self.session_block_count
                     self.status.loop_state = "session_blocked"
                     self.status.last_msg = "session_blocked"
                     self._log_strategy_reason_change("session_blocked")
+                    self._log_filter_diagnostics()
                     self._log_strategy_heartbeat()
                     self.stop_event.wait(self.cfg.entry_check_seconds)
                     continue
@@ -311,6 +344,8 @@ class TradingEngine:
                     continue
 
                 self.status.loop_state = "new_bar"
+                self.processed_bars += 1
+                self.status.processed_bars = self.processed_bars
                 logging.info(
                     "NEW_BAR symbol=%s tf=%s closed_bar_time=%s",
                     self.cfg.symbol,
@@ -460,7 +495,28 @@ class TradingEngine:
                 )
                 if intent.debug:
                     logging.info("INTENT_DEBUG %s", intent.debug)
+                    if regime in ("trend", "trend_overextended"):
+                        logging.info(
+                            "TREND_SIDE_DIAG long_score=%s short_score=%s min=%s effective_min=%s long_gap=%s short_gap=%s",
+                            intent.debug.get("trend_score_long"),
+                            intent.debug.get("trend_score_short"),
+                            intent.debug.get("trend_min_score"),
+                            intent.debug.get("effective_min_score"),
+                            intent.debug.get("long_score_gap"),
+                            intent.debug.get("short_score_gap"),
+                        )
+                    if regime == "range":
+                        logging.info(
+                            "RANGE_SIDE_DIAG near_top=%s near_bottom=%s fake_break_top=%s fake_break_bottom=%s reclaim_top=%s reclaim_bottom=%s",
+                            intent.debug.get("near_top"),
+                            intent.debug.get("near_bottom"),
+                            intent.debug.get("fake_break_top"),
+                            intent.debug.get("fake_break_bottom"),
+                            intent.debug.get("reclaim_top"),
+                            intent.debug.get("reclaim_bottom"),
+                        )
                 self._log_strategy_reason_change(intent.reason)
+                self._log_filter_diagnostics()
 
                 if intent.valid and intent.batch_id != self.last_batch_id:
                     spread_points = 0

@@ -42,12 +42,13 @@ class BotConfig:
     rsi_short_min: float = 38.0
     require_breakout: bool = False
     trend_min_score: int = 60
+    paper_trend_score_relax: int = 5
     swing_lookback: int = 10
     sl_atr_buffer_mult: float = 0.25
     range_lookback: int = 60
     range_touch_tol_mult: float = 0.2
-    range_min_atr_ratio: float = 1.3
-    range_max_atr_ratio: float = 6.5
+    range_min_atr_ratio: float = 1.0
+    range_max_atr_ratio: float = 7.5
     range_required_touches: int = 1
     range_mid_low: float = 0.40
     range_mid_high: float = 0.60
