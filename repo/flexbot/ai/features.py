@@ -1,4 +1,17 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
 from typing import Any
+
+
+def _session_from_hour(hour: int) -> str:
+    if hour < 7:
+        return "Asia"
+    if hour < 13:
+        return "London"
+    if hour < 17:
+        return "London/NY_overlap"
+    return "New_York"
 
 
 def build_feature_snapshot(
@@ -8,6 +21,8 @@ def build_feature_snapshot(
     spread_points: int,
     max_spread_points: int,
     regime: str = "",
+    strategy_name: str = "",
+    side: str = "",
 ) -> dict[str, Any]:
     debug = intent_debug or {}
 
@@ -22,11 +37,20 @@ def build_feature_snapshot(
     breakout_ok_long = bool(debug.get("breakout_ok_long", False))
     breakout_ok_short = bool(debug.get("breakout_ok_short", False))
 
+    bar_time = int(debug.get("bar_time", 0) or 0)
+    dt = datetime.fromtimestamp(bar_time, tz=timezone.utc) if bar_time else datetime.now(timezone.utc)
+    session_name = str(debug.get("session", "") or _session_from_hour(dt.hour))
+
     return {
         "signal_reason": signal_reason,
-        "bar_time": int(debug.get("bar_time", 0)),
+        "bar_time": bar_time,
         "symbol": str(debug.get("symbol", "")),
         "timeframe": str(debug.get("timeframe", "")),
+        "strategy_name": strategy_name,
+        "side": side,
+        "weekday": dt.weekday(),
+        "hour": dt.hour,
+        "session_name": session_name,
         "trend_ok_long": trend_ok_long,
         "trend_ok_short": trend_ok_short,
         "htf_ok_long": htf_ok_long,
@@ -45,6 +69,14 @@ def build_feature_snapshot(
         "regime": str(regime),
         "body_size": float(debug.get("body_size", 0.0) or 0.0),
         "wick_ratio": float(debug.get("wick_ratio", 0.0) or 0.0),
+        "compression_flag": bool(debug.get("compression_flag", False)),
+        "breakout_pressure_up": bool(debug.get("breakout_pressure_up", False)),
+        "breakout_pressure_down": bool(debug.get("breakout_pressure_down", False)),
+        "three_candle_breakout": bool(debug.get("three_candle_breakout", False)),
+        "three_candle_reversal": bool(debug.get("three_candle_reversal", False)),
+        "rising_lows": bool(debug.get("rising_lows", False)),
+        "falling_highs": bool(debug.get("falling_highs", False)),
+        "mid_range_flag": bool(debug.get("mid_range_candle", False)),
         "session": str(debug.get("session", "")),
         "spread_points": int(spread_points),
         "max_spread_points": int(max_spread_points),

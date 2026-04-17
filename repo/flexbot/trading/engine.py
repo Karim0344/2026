@@ -23,6 +23,8 @@ from flexbot.ai.memory import log_trade_open, log_trade_close
 from flexbot.ai.optimizer import analyze_memory
 from flexbot.ai.regime import detect_regime
 from flexbot.ai.selector import selector_adjustment
+from flexbot.ai.context_scorer import ContextScorer
+from flexbot.ai.pattern_scorer import PatternScorer
 
 
 @dataclass
@@ -78,6 +80,15 @@ class TradingEngine:
         self.spread_block_count = 0
         self.processed_bars = 0
         self._last_block_diag = 0.0
+        self._last_learning_refresh = 0.0
+        self.context_scorer = ContextScorer(
+            store_learning_path=self.cfg.store_learning_path,
+            weight=self.cfg.context_score_weight,
+        )
+        self.pattern_scorer = PatternScorer(
+            store_learning_path=self.cfg.store_learning_path,
+            weight=self.cfg.pattern_score_weight,
+        )
 
     def start(self):
         mt5_initialize_started = False
@@ -207,6 +218,21 @@ class TradingEngine:
         if closed > 20 and winrate < 40:
             logging.warning("PERF_WEAK winrate=%.2f closed=%s", winrate, closed)
 
+    def _refresh_learning_tables_if_needed(self):
+        now_ts = time.time()
+        refresh_s = max(60, int(self.cfg.learning_refresh_minutes) * 60)
+        if (now_ts - self._last_learning_refresh) < refresh_s:
+            return
+        self._last_learning_refresh = now_ts
+        try:
+            self.context_scorer.refresh()
+            self.pattern_scorer.refresh()
+            logging.info(
+                "LEARNING_TABLES_REFRESHED path=%s", self.cfg.store_learning_path
+            )
+        except Exception as e:
+            logging.warning("LEARNING_TABLE_REFRESH_FAILED err=%s", e)
+
     def _spread_ok(self) -> bool:
         try:
             diag = client.get_symbol_diagnostics(self.cfg.symbol)
@@ -302,6 +328,7 @@ class TradingEngine:
         while not self.stop_event.is_set():
             try:
                 self._update_guards()
+                self._refresh_learning_tables_if_needed()
                 can_enter, guard_reason = self._can_enter()
                 if not can_enter:
                     self.status.loop_state = guard_reason
@@ -533,12 +560,15 @@ class TradingEngine:
                         spread_points=spread_points,
                         max_spread_points=self.cfg.max_spread_points,
                         regime=regime,
+                        strategy_name=intent.reason,
+                        side=("long" if intent.is_long else "short"),
                     )
                     base_confidence = confidence_score(
                         features=features,
                         is_long=bool(intent.is_long),
                         max_spread=self.cfg.max_spread_points,
                     )
+                    setup_score = int(round(base_confidence * float(self.cfg.setup_score_weight)))
 
                     selector = {
                         "block": False,
@@ -581,14 +611,45 @@ class TradingEngine:
                             selector["reason"],
                         )
 
-                    confidence = max(0, min(100, base_confidence + int(selector["bonus"])))
+                    selector_bonus = int(selector["bonus"])
+                    context_score = 0
+                    context_reason = "context_disabled"
+                    if self.cfg.enable_statistical_learning and self.cfg.enable_context_score:
+                        context_score, context_reason = self.context_scorer.score(
+                            lookup=features,
+                            min_samples=self.cfg.min_samples_context,
+                        )
+
+                    pattern_score = 0
+                    pattern_reason = "pattern_disabled"
+                    if self.cfg.enable_pattern_learning and self.cfg.enable_pattern_score:
+                        pattern_score, pattern_reason = self.pattern_scorer.score(
+                            lookup=features,
+                            min_samples=self.cfg.min_samples_pattern,
+                        )
+
+                    spread_penalty = 0 if spread_points < self.cfg.max_spread_points else 8
+                    bad_session_penalty = 3 if features.get("session_name") in ("Asia",) else 0
+                    final_score = max(
+                        0,
+                        min(
+                            100,
+                            setup_score
+                            + context_score
+                            + pattern_score
+                            + selector_bonus
+                            - spread_penalty
+                            - bad_session_penalty,
+                        ),
+                    )
+                    confidence = int(final_score)
 
                     logging.info(
                         "AI_SELECTOR strategy=%s regime=%s base=%s bonus=%s final=%s selector_reason=%s samples=%s avg_r=%.2f winrate=%.2f",
                         intent.reason,
                         regime,
                         base_confidence,
-                        selector["bonus"],
+                        selector_bonus,
                         confidence,
                         selector["reason"],
                         selector["samples"],
@@ -631,6 +692,22 @@ class TradingEngine:
                         self.cfg.ai_min_confidence,
                         intent.reason,
                         features,
+                    )
+                    logging.info(
+                        "LIVE_DECISION regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s selector_bonus=%s spread_penalty=%s bad_session_penalty=%s final_score=%s decision=%s context_reason=%s pattern_reason=%s",
+                        regime,
+                        intent.reason,
+                        "long" if intent.is_long else "short",
+                        setup_score,
+                        context_score,
+                        pattern_score,
+                        selector_bonus,
+                        spread_penalty,
+                        bad_session_penalty,
+                        final_score,
+                        "paper_signal" if self.cfg.paper_mode else "live_signal",
+                        context_reason,
+                        pattern_reason,
                     )
                     self.signal_count += 1
                     self.status.signal_count = self.signal_count

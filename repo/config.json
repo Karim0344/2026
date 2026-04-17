@@ -47,5 +47,21 @@
   "entry_check_seconds": 1.0,
   "manage_seconds": 1.0,
   "session_start_hour": 7,
-  "session_end_hour": 20
+  "session_end_hour": 20,
+  "history_bars_m5": 50000,
+  "history_bars_m15": 20000,
+  "history_bars_h1": 10000,
+  "enable_statistical_learning": true,
+  "enable_pattern_learning": true,
+  "enable_context_score": true,
+  "enable_pattern_score": true,
+  "context_score_weight": 1.0,
+  "pattern_score_weight": 1.0,
+  "setup_score_weight": 1.0,
+  "learning_refresh_minutes": 60,
+  "min_samples_context": 20,
+  "min_samples_pattern": 20,
+  "store_history_path": "data/history",
+  "store_learning_path": "data/learned",
+  "store_reports_path": "reports"
 }

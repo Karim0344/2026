@@ -32,6 +32,28 @@ class BotConfig:
     ai_selector_blocking: bool = False
     ai_selector_min_samples: int = 10
 
+    # Learning / history
+    history_bars_m5: int = 50000
+    history_bars_m15: int = 20000
+    history_bars_h1: int = 10000
+
+    enable_statistical_learning: bool = True
+    enable_pattern_learning: bool = True
+    enable_context_score: bool = True
+    enable_pattern_score: bool = True
+
+    context_score_weight: float = 1.0
+    pattern_score_weight: float = 1.0
+    setup_score_weight: float = 1.0
+
+    learning_refresh_minutes: int = 60
+    min_samples_context: int = 20
+    min_samples_pattern: int = 20
+
+    store_history_path: str = "data/history"
+    store_learning_path: str = "data/learned"
+    store_reports_path: str = "reports"
+
     # Strategy params
     ma_fast: int = 50
     ma_trend: int = 100
