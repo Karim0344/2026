@@ -151,6 +151,8 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
     paper_near_tolerance = max(int(getattr(cfg, "paper_near_tolerance", 0)), 0)
     near_signal_gap = max(int(getattr(cfg, "trend_near_signal_gap", 10)), 0)
     near_min_score = max(effective_min_score - paper_near_tolerance, 0) + paper_near_extra_score
+    near_min_score = effective_min_score + paper_near_extra_score
+    near_signal_gap = max(int(getattr(cfg, "trend_near_signal_gap", 6)), 0)
 
     debug = {
         "symbol": symbol,
@@ -186,6 +188,7 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
         "trend_short_extra_score": short_extra_score,
         "trend_short_min_score": short_min_score,
         "near_min_score": near_min_score,
+        "near_signal_gap": near_signal_gap,
         "long_score_gap": int(trend_score_long - min_score),
         "short_score_gap": int(trend_score_short - min_score),
         "body_size": round(body_size, 6),

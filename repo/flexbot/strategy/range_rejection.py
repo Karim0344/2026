@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import pandas as pd
+import numpy as np
 
 from flexbot.mt5 import client
 
@@ -30,6 +31,8 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
     max_buffer = float(getattr(cfg, "range_atr_ratio_max_buffer", 1.1))
     min_quantile = float(getattr(cfg, "range_atr_ratio_min_quantile", 0.50))
     min_floor = float(getattr(cfg, "range_atr_ratio_min_floor", 0.50))
+    max_atr_ratio_percentile = float(getattr(cfg, "range_max_atr_ratio_percentile", 0.95))
+    atr_ratio_percentile_window = max(int(getattr(cfg, "range_atr_ratio_percentile_window", 240)), 30)
     required_touches = int(getattr(cfg, "range_required_touches", 1))
     mid_low = float(getattr(cfg, "range_mid_low", 0.35))
     mid_high = float(getattr(cfg, "range_mid_high", 0.65))
@@ -105,6 +108,28 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
         p50 = p75 = p90 = p95 = 0.0
         dynamic_min = min_atr_ratio
         dynamic_max = max_atr_ratio
+    ratio_series = (
+        (df["high"].rolling(lookback).max() - df["low"].rolling(lookback).min())
+        / (
+            pd.concat(
+                [
+                    (df["high"] - df["low"]),
+                    (df["high"] - df["close"].shift(1)).abs(),
+                    (df["low"] - df["close"].shift(1)).abs(),
+                ],
+                axis=1,
+            )
+            .max(axis=1)
+            .rolling(14)
+            .mean()
+        )
+    ).replace([np.inf, -np.inf], np.nan).dropna()
+    ratio_tail = ratio_series.tail(atr_ratio_percentile_window)
+    dynamic_max_atr_ratio = max_atr_ratio
+    if not ratio_tail.empty:
+        clipped_pct = min(max(max_atr_ratio_percentile, 0.50), 0.995)
+        dynamic_max_atr_ratio = float(np.percentile(ratio_tail.to_numpy(dtype=float), clipped_pct * 100.0))
+    effective_max_atr_ratio = max(min_atr_ratio, min(max_atr_ratio, dynamic_max_atr_ratio))
     touch_tol = atr * touch_tol_mult
     recent = df.iloc[-(lookback + 2):-2]
     top_touches = int((recent["high"] >= (high_zone - touch_tol)).sum())
@@ -159,6 +184,10 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
         "atr_ratio_p75": round(p75, 3),
         "atr_ratio_p90": round(p90, 3),
         "atr_ratio_p95": round(p95, 3),
+        "range_max_atr_ratio_percentile": round(max_atr_ratio_percentile, 3),
+        "range_atr_ratio_percentile_window": atr_ratio_percentile_window,
+        "range_max_atr_ratio_dynamic": round(dynamic_max_atr_ratio, 3),
+        "range_max_atr_ratio_effective": round(effective_max_atr_ratio, 3),
         "required_touches": required_touches,
         "mid_low": round(mid_low, 3),
         "mid_high": round(mid_high, 3),
@@ -170,6 +199,9 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
     if atr_ratio < dynamic_min or atr_ratio > dynamic_max:
         debug["min_required"] = round(dynamic_min, 3)
         debug["max_allowed"] = round(dynamic_max, 3)
+    if atr_ratio < min_atr_ratio or atr_ratio > effective_max_atr_ratio:
+        debug["min_required"] = round(min_atr_ratio, 3)
+        debug["max_allowed"] = round(effective_max_atr_ratio, 3)
         return Intent(None, close, 0.0, "range_width_invalid", debug)
 
     if top_touches < required_touches or bottom_touches < required_touches:
