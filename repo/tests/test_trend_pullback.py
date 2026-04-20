@@ -89,3 +89,41 @@ def test_trend_intent_uses_paper_relaxed_threshold_for_near_signal():
     assert intent.is_long is True
     assert intent.reason == "PRO_LONG_PAPER"
     assert intent.debug["paper_relaxed_entry"] is True
+
+
+def test_trend_intent_allows_paper_near_signal_without_momentum_close():
+    sys.modules.setdefault(
+        "MetaTrader5",
+        SimpleNamespace(
+            TIMEFRAME_M1=1,
+            TIMEFRAME_M5=5,
+            TIMEFRAME_M15=15,
+            TIMEFRAME_H1=60,
+            TIMEFRAME_H4=240,
+        ),
+    )
+    mod = importlib.import_module("flexbot.strategy.trend_pullback_v1")
+    rates = _build_trend_rates()
+    # Keep trend and pullback structure, but force bearish close on the signal bar.
+    rates[-2] = _mk_bar(218, 117.10, 117.30, 112.00, 117.00)
+
+    cfg = SimpleNamespace(
+        ma_fast=50,
+        ma_trend=100,
+        atr_period=14,
+        trend_min_score=85,
+        require_breakout=False,
+        paper_mode=True,
+        paper_trend_score_relax=5,
+    )
+
+    with patch("flexbot.strategy.trend_pullback_v1.client.copy_rates", return_value=rates), patch(
+        "flexbot.strategy.trend_pullback_v1.client.broker_datetime_utc",
+        return_value=SimpleNamespace(hour=10),
+    ):
+        intent = mod.get_intent("XAUUSD", "M5", cfg=cfg, last_closed_bar_time=0)
+
+    assert intent.valid is True
+    assert intent.is_long is True
+    assert intent.reason == "PRO_LONG_PAPER_NEAR"
+    assert intent.debug["paper_near_signal_entry"] is True

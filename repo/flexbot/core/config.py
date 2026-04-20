@@ -70,7 +70,7 @@ class BotConfig:
     range_lookback: int = 60
     range_touch_tol_mult: float = 0.2
     range_min_atr_ratio: float = 1.0
-    range_max_atr_ratio: float = 7.5
+    range_max_atr_ratio: float = 20.0
     range_required_touches: int = 1
     range_mid_low: float = 0.40
     range_mid_high: float = 0.60
