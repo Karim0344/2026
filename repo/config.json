@@ -35,12 +35,12 @@
   "range_touch_tol_mult": 0.2,
   "range_min_atr_ratio": 1.0,
   "range_max_atr_ratio": 20.0,
-  "range_required_touches": 1,
+  "range_required_touches": 2,
   "range_mid_low": 0.35,
   "range_mid_high": 0.65,
   "range_weak_body_min": 0.15,
   "range_break_buffer_mult": 0.1,
-  "range_wick_body_min": 1.15,
+  "range_wick_body_min": 1.35,
   "be_buffer_points": 2,
   "trail_atr_mult": 1.0,
   "trail_step_atr_mult": 0.25,
@@ -63,5 +63,9 @@
   "min_samples_pattern": 20,
   "store_history_path": "data/history",
   "store_learning_path": "data/learned",
-  "store_reports_path": "reports"
+  "store_reports_path": "reports",
+  "paper_allow_near_signals": false,
+  "paper_near_extra_score": 5,
+  "trend_allow_short": false,
+  "trend_short_extra_score": 10
 }

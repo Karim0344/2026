@@ -132,6 +132,13 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
         debug["required_bottom_touches"] = required_touches
         return Intent(None, close, 0.0, "range_not_confirmed", debug)
 
+    if not (near_top or near_bottom or fake_break_top or fake_break_bottom):
+        return Intent(None, close, 0.0, "range_idle", {
+            "close_pos": round(float(close_pos), 4),
+            "range_width": round(float(range_width), 5),
+            "atr_ratio": round(float(atr_ratio), 3),
+        })
+
     if in_middle and not (middle_override_top or middle_override_bottom):
         debug["required_edge"] = f"<{mid_low:.2f} or >{mid_high:.2f}"
         debug["mid_block"] = {

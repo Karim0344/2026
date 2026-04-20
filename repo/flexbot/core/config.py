@@ -65,18 +65,22 @@ class BotConfig:
     require_breakout: bool = False
     trend_min_score: int = 60
     paper_trend_score_relax: int = 5
+    paper_allow_near_signals: bool = False
+    paper_near_extra_score: int = 5
+    trend_allow_short: bool = False
+    trend_short_extra_score: int = 10
     swing_lookback: int = 10
     sl_atr_buffer_mult: float = 0.25
     range_lookback: int = 60
     range_touch_tol_mult: float = 0.2
     range_min_atr_ratio: float = 1.0
     range_max_atr_ratio: float = 20.0
-    range_required_touches: int = 1
+    range_required_touches: int = 2
     range_mid_low: float = 0.40
     range_mid_high: float = 0.60
     range_weak_body_min: float = 0.15
     range_break_buffer_mult: float = 0.1
-    range_wick_body_min: float = 1.15
+    range_wick_body_min: float = 1.35
 
     # Management
     be_buffer_points: int = 2
