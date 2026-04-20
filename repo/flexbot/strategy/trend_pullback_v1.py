@@ -143,6 +143,12 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
     paper_relax = int(getattr(cfg, "paper_trend_score_relax", 0)) if paper_mode else 0
     effective_min_score = max(min_score - max(paper_relax, 0), 0)
     require_breakout = bool(getattr(cfg, "require_breakout", False))
+    allow_short = bool(getattr(cfg, "trend_allow_short", False))
+    short_extra_score = max(int(getattr(cfg, "trend_short_extra_score", 0)), 0)
+    short_min_score = effective_min_score + short_extra_score
+    allow_paper_near = bool(getattr(cfg, "paper_allow_near_signals", False))
+    paper_near_extra_score = max(int(getattr(cfg, "paper_near_extra_score", 0)), 0)
+    near_min_score = effective_min_score + paper_near_extra_score
 
     debug = {
         "symbol": symbol,
@@ -170,6 +176,12 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
         "effective_min_score": effective_min_score,
         "paper_mode": paper_mode,
         "paper_trend_score_relax": paper_relax,
+        "paper_allow_near_signals": allow_paper_near,
+        "paper_near_extra_score": paper_near_extra_score,
+        "trend_allow_short": allow_short,
+        "trend_short_extra_score": short_extra_score,
+        "trend_short_min_score": short_min_score,
+        "near_min_score": near_min_score,
         "long_score_gap": int(trend_score_long - min_score),
         "short_score_gap": int(trend_score_short - min_score),
         "body_size": round(body_size, 6),
@@ -178,19 +190,24 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
     }
 
     long_ok = trend_long and pullback_long and bullish and trend_score_long >= effective_min_score
-    short_ok = trend_short and pullback_short and bearish and trend_score_short >= effective_min_score
+    short_ok = allow_short and trend_short and pullback_short and bearish and trend_score_short >= short_min_score
 
     near_long_ok = (
         paper_mode
+        and allow_paper_near
         and trend_long
-        and trend_score_long >= effective_min_score
-        and (pullback_long or bullish)
+        and trend_score_long >= near_min_score
+        and pullback_long
+        and bullish
     )
     near_short_ok = (
         paper_mode
+        and allow_paper_near
+        and allow_short
         and trend_short
-        and trend_score_short >= effective_min_score
-        and (pullback_short or bearish)
+        and trend_score_short >= max(short_min_score, near_min_score)
+        and pullback_short
+        and bearish
     )
 
     if require_breakout:
