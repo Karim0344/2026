@@ -24,7 +24,7 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
     lookback = int(getattr(cfg, "range_lookback", 60))
     touch_tol_mult = float(getattr(cfg, "range_touch_tol_mult", 0.2))
     min_atr_ratio = float(getattr(cfg, "range_min_atr_ratio", 1.3))
-    max_atr_ratio = float(getattr(cfg, "range_max_atr_ratio", 6.5))
+    max_atr_ratio = float(getattr(cfg, "range_max_atr_ratio", 20.0))
     required_touches = int(getattr(cfg, "range_required_touches", 1))
     mid_low = float(getattr(cfg, "range_mid_low", 0.35))
     mid_high = float(getattr(cfg, "range_mid_high", 0.65))

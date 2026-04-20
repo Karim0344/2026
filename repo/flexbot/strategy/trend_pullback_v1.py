@@ -139,7 +139,8 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
         trend_score_short += 20
 
     min_score = int(getattr(cfg, "trend_min_score", 65))
-    paper_relax = int(getattr(cfg, "paper_trend_score_relax", 0)) if bool(getattr(cfg, "paper_mode", False)) else 0
+    paper_mode = bool(getattr(cfg, "paper_mode", False))
+    paper_relax = int(getattr(cfg, "paper_trend_score_relax", 0)) if paper_mode else 0
     effective_min_score = max(min_score - max(paper_relax, 0), 0)
     require_breakout = bool(getattr(cfg, "require_breakout", False))
 
@@ -167,7 +168,7 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
         "trend_score_short": trend_score_short,
         "trend_min_score": min_score,
         "effective_min_score": effective_min_score,
-        "paper_mode": bool(getattr(cfg, "paper_mode", False)),
+        "paper_mode": paper_mode,
         "paper_trend_score_relax": paper_relax,
         "long_score_gap": int(trend_score_long - min_score),
         "short_score_gap": int(trend_score_short - min_score),
@@ -179,9 +180,24 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
     long_ok = trend_long and pullback_long and bullish and trend_score_long >= effective_min_score
     short_ok = trend_short and pullback_short and bearish and trend_score_short >= effective_min_score
 
+    near_long_ok = (
+        paper_mode
+        and trend_long
+        and trend_score_long >= effective_min_score
+        and (pullback_long or bullish)
+    )
+    near_short_ok = (
+        paper_mode
+        and trend_short
+        and trend_score_short >= effective_min_score
+        and (pullback_short or bearish)
+    )
+
     if require_breakout:
         long_ok = long_ok and breakout_long
         short_ok = short_ok and breakout_short
+        near_long_ok = near_long_ok and breakout_long
+        near_short_ok = near_short_ok and breakout_short
 
     batch_id = f"{symbol}_{timeframe}_{int(c0['time'])}"
     if long_ok:
@@ -195,6 +211,14 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
             debug["paper_relaxed_entry"] = True
             return TradeIntent(True, False, entry=entry, sl=sl_short, batch_id=batch_id, reason="PRO_SHORT_PAPER", debug=debug)
         return TradeIntent(True, False, entry=entry, sl=sl_short, batch_id=batch_id, reason="PRO_SHORT", debug=debug)
+
+    if near_long_ok:
+        debug["paper_near_signal_entry"] = True
+        return TradeIntent(True, True, entry=entry, sl=sl_long, batch_id=batch_id, reason="PRO_LONG_PAPER_NEAR", debug=debug)
+
+    if near_short_ok:
+        debug["paper_near_signal_entry"] = True
+        return TradeIntent(True, False, entry=entry, sl=sl_short, batch_id=batch_id, reason="PRO_SHORT_PAPER_NEAR", debug=debug)
 
     fail_reason = "trend_fail"
     if trend_score_long >= max(min_score - 10, 0) or trend_score_short >= max(min_score - 10, 0):

@@ -34,7 +34,7 @@
   "range_lookback": 60,
   "range_touch_tol_mult": 0.2,
   "range_min_atr_ratio": 1.0,
-  "range_max_atr_ratio": 7.5,
+  "range_max_atr_ratio": 20.0,
   "range_required_touches": 1,
   "range_mid_low": 0.35,
   "range_mid_high": 0.65,
