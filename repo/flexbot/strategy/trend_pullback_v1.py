@@ -149,6 +149,7 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
     allow_paper_near = bool(getattr(cfg, "paper_allow_near_signals", False))
     paper_near_extra_score = max(int(getattr(cfg, "paper_near_extra_score", 0)), 0)
     near_min_score = effective_min_score + paper_near_extra_score
+    near_signal_gap = max(int(getattr(cfg, "trend_near_signal_gap", 6)), 0)
 
     debug = {
         "symbol": symbol,
@@ -182,6 +183,7 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
         "trend_short_extra_score": short_extra_score,
         "trend_short_min_score": short_min_score,
         "near_min_score": near_min_score,
+        "near_signal_gap": near_signal_gap,
         "long_score_gap": int(trend_score_long - min_score),
         "short_score_gap": int(trend_score_short - min_score),
         "body_size": round(body_size, 6),
@@ -238,6 +240,6 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
         return TradeIntent(True, False, entry=entry, sl=sl_short, batch_id=batch_id, reason="PRO_SHORT_PAPER_NEAR", debug=debug)
 
     fail_reason = "trend_fail"
-    if trend_score_long >= max(min_score - 10, 0) or trend_score_short >= max(min_score - 10, 0):
+    if trend_score_long >= max(min_score - near_signal_gap, 0) or trend_score_short >= max(min_score - near_signal_gap, 0):
         fail_reason = "trend_near_signal"
     return TradeIntent(False, entry=entry, batch_id=batch_id, reason=fail_reason, debug=debug)

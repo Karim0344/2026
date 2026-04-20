@@ -129,3 +129,40 @@ def test_trend_intent_blocks_paper_near_signal_without_momentum_close():
 
     assert intent.valid is False
     assert intent.reason == "trend_near_signal"
+
+
+def test_trend_intent_uses_configurable_near_signal_gap():
+    sys.modules.setdefault(
+        "MetaTrader5",
+        SimpleNamespace(
+            TIMEFRAME_M1=1,
+            TIMEFRAME_M5=5,
+            TIMEFRAME_M15=15,
+            TIMEFRAME_H1=60,
+            TIMEFRAME_H4=240,
+        ),
+    )
+    mod = importlib.import_module("flexbot.strategy.trend_pullback_v1")
+    rates = _build_trend_rates()
+    rates[-2] = _mk_bar(218, 117.10, 117.30, 112.00, 117.00)
+
+    cfg = SimpleNamespace(
+        ma_fast=50,
+        ma_trend=100,
+        atr_period=14,
+        trend_min_score=85,
+        require_breakout=False,
+        trend_near_signal_gap=2,
+        paper_mode=False,
+        paper_allow_near_signals=False,
+        trend_allow_short=False,
+    )
+
+    with patch("flexbot.strategy.trend_pullback_v1.client.copy_rates", return_value=rates), patch(
+        "flexbot.strategy.trend_pullback_v1.client.broker_datetime_utc",
+        return_value=SimpleNamespace(hour=10),
+    ):
+        intent = mod.get_intent("XAUUSD", "M5", cfg=cfg, last_closed_bar_time=0)
+
+    assert intent.valid is False
+    assert intent.reason == "trend_fail"
