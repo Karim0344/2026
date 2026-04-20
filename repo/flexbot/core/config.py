@@ -22,13 +22,13 @@ class BotConfig:
     paper_mode: bool = True  # dry-run: log signals, do not send orders
 
     # AI assist
-    ai_enable_scoring: bool = True
+    ai_enable_scoring: bool = False
     ai_min_confidence: int = 40
     ai_block_on_confidence: bool = False
     ai_memory_path: str = "trade_memory.jsonl"
 
     # AI selector
-    ai_selector_enable: bool = True
+    ai_selector_enable: bool = False
     ai_selector_blocking: bool = False
     ai_selector_min_samples: int = 10
 
@@ -63,10 +63,11 @@ class BotConfig:
     rsi_long_max: float = 65.0
     rsi_short_min: float = 38.0
     require_breakout: bool = False
-    trend_min_score: int = 60
+    trend_min_score: int = 58
     paper_trend_score_relax: int = 5
-    paper_allow_near_signals: bool = False
-    paper_near_extra_score: int = 5
+    paper_allow_near_signals: bool = True
+    paper_near_extra_score: int = 0
+    paper_near_tolerance: int = 4
     trend_allow_short: bool = False
     trend_short_extra_score: int = 10
     swing_lookback: int = 10
@@ -75,7 +76,12 @@ class BotConfig:
     range_touch_tol_mult: float = 0.2
     range_min_atr_ratio: float = 1.0
     range_max_atr_ratio: float = 20.0
-    range_required_touches: int = 2
+    range_atr_ratio_window: int = 240
+    range_atr_ratio_max_quantile: float = 0.95
+    range_atr_ratio_max_buffer: float = 1.1
+    range_atr_ratio_min_quantile: float = 0.5
+    range_atr_ratio_min_floor: float = 0.5
+    range_required_touches: int = 1
     range_mid_low: float = 0.40
     range_mid_high: float = 0.60
     range_weak_body_min: float = 0.15

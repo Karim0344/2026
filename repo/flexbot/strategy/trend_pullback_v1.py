@@ -148,7 +148,8 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
     short_min_score = effective_min_score + short_extra_score
     allow_paper_near = bool(getattr(cfg, "paper_allow_near_signals", False))
     paper_near_extra_score = max(int(getattr(cfg, "paper_near_extra_score", 0)), 0)
-    near_min_score = effective_min_score + paper_near_extra_score
+    paper_near_tolerance = max(int(getattr(cfg, "paper_near_tolerance", 0)), 0)
+    near_min_score = max(effective_min_score - paper_near_tolerance, 0) + paper_near_extra_score
 
     debug = {
         "symbol": symbol,
@@ -178,6 +179,7 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
         "paper_trend_score_relax": paper_relax,
         "paper_allow_near_signals": allow_paper_near,
         "paper_near_extra_score": paper_near_extra_score,
+        "paper_near_tolerance": paper_near_tolerance,
         "trend_allow_short": allow_short,
         "trend_short_extra_score": short_extra_score,
         "trend_short_min_score": short_min_score,
