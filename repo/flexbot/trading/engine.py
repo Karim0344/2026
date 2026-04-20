@@ -2,6 +2,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
+from collections import Counter
 import MetaTrader5 as mt5
 
 from flexbot.core.config import BotConfig
@@ -81,6 +82,12 @@ class TradingEngine:
         self.processed_bars = 0
         self._last_block_diag = 0.0
         self._last_learning_refresh = 0.0
+        self.eval_window_bars = 100
+        self.window_processed_bars = 0
+        self.window_candidate_signals = 0
+        self.window_true_signals = 0
+        self.window_near_signals = 0
+        self.window_reject_reasons: Counter[str] = Counter()
         self.context_scorer = ContextScorer(
             store_learning_path=self.cfg.store_learning_path,
             weight=self.cfg.context_score_weight,
@@ -324,6 +331,58 @@ class TradingEngine:
             self._last_strategy_reason = reason
             logging.info("STATE_CHANGE reason=%s", reason)
 
+    def _is_candidate_reason(self, reason: str) -> bool:
+        if not reason:
+            return False
+        if "near_signal" in reason:
+            return True
+        return reason.startswith(("PRO_", "RANGE_"))
+
+    def _track_signal_flow_window(self, reason: str, valid: bool):
+        self.window_processed_bars += 1
+        is_candidate = bool(valid) or self._is_candidate_reason(reason)
+        if is_candidate:
+            self.window_candidate_signals += 1
+        if valid:
+            self.window_true_signals += 1
+        if "near_signal" in (reason or ""):
+            self.window_near_signals += 1
+        if not valid:
+            self.window_reject_reasons[reason or "unknown"] += 1
+
+        if self.window_processed_bars < self.eval_window_bars:
+            return
+
+        candidate_rate = (self.window_candidate_signals / self.window_processed_bars) * 100.0
+        pass_through = (
+            (self.window_true_signals / self.window_candidate_signals) * 100.0
+            if self.window_candidate_signals
+            else 0.0
+        )
+        near_to_true = (
+            self.window_near_signals / max(self.window_true_signals, 1)
+            if self.window_near_signals
+            else 0.0
+        )
+        top_rejects = self.window_reject_reasons.most_common(3)
+        logging.info(
+            "FLOW_WINDOW bars=%s candidate=%s(%.1f%%) true=%s pass_through=%.1f%% near=%s near_to_true=%.2f top_rejects=%s",
+            self.window_processed_bars,
+            self.window_candidate_signals,
+            candidate_rate,
+            self.window_true_signals,
+            pass_through,
+            self.window_near_signals,
+            near_to_true,
+            top_rejects,
+        )
+
+        self.window_processed_bars = 0
+        self.window_candidate_signals = 0
+        self.window_true_signals = 0
+        self.window_near_signals = 0
+        self.window_reject_reasons.clear()
+
     def _entry_loop(self):
         while not self.stop_event.is_set():
             try:
@@ -543,6 +602,7 @@ class TradingEngine:
                             intent.debug.get("reclaim_bottom"),
                         )
                 self._log_strategy_reason_change(intent.reason)
+                self._track_signal_flow_window(reason=intent.reason, valid=bool(intent.valid))
                 self._log_filter_diagnostics()
 
                 if intent.valid and intent.batch_id != self.last_batch_id:

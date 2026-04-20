@@ -77,3 +77,35 @@ def test_range_intent_allows_fake_break_reclaim_inside_middle_band():
     assert intent.reason == "RANGE_SHORT"
     assert bool(intent.debug["in_middle"]) is True
     assert bool(intent.debug["middle_override_top"]) is True
+
+
+def test_range_intent_uses_percentile_based_max_atr_ratio():
+    sys.modules.setdefault(
+        "MetaTrader5",
+        SimpleNamespace(
+            TIMEFRAME_M1=1,
+            TIMEFRAME_M5=5,
+            TIMEFRAME_M15=15,
+            TIMEFRAME_H1=60,
+            TIMEFRAME_H4=240,
+        ),
+    )
+    mod = importlib.import_module("flexbot.strategy.range_rejection")
+    rates = _build_sideways_rates()
+    # Inject one large spike into the range-estimation window so current atr_ratio becomes extreme.
+    rates[-40] = _mk_bar(220, 100.00, 130.00, 70.00, 100.00)
+
+    cfg = SimpleNamespace(
+        range_max_atr_ratio=50.0,
+        range_max_atr_ratio_percentile=0.50,
+        range_atr_ratio_percentile_window=120,
+    )
+    with patch(
+        "flexbot.strategy.range_rejection.client.copy_rates",
+        return_value=rates,
+    ):
+        intent = mod.get_range_intent("XAUUSD", "M5", cfg=cfg)
+
+    assert intent.direction is None
+    assert intent.reason == "range_width_invalid"
+    assert intent.debug["max_allowed"] <= intent.debug["range_max_atr_ratio"]

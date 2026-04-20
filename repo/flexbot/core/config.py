@@ -67,6 +67,7 @@ class BotConfig:
     paper_trend_score_relax: int = 5
     paper_allow_near_signals: bool = False
     paper_near_extra_score: int = 5
+    trend_near_signal_gap: int = 6
     trend_allow_short: bool = False
     trend_short_extra_score: int = 10
     swing_lookback: int = 10
@@ -75,6 +76,8 @@ class BotConfig:
     range_touch_tol_mult: float = 0.2
     range_min_atr_ratio: float = 1.0
     range_max_atr_ratio: float = 20.0
+    range_max_atr_ratio_percentile: float = 0.95
+    range_atr_ratio_percentile_window: int = 240
     range_required_touches: int = 2
     range_mid_low: float = 0.40
     range_mid_high: float = 0.60
