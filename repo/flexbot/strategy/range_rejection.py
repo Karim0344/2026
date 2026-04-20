@@ -87,16 +87,20 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
     )
     hist_high = df["high"].shift(3).rolling(lookback).max()
     hist_low = df["low"].shift(3).rolling(lookback).min()
-    atr_ratio_hist = ((hist_high - hist_low) / atr_series.replace(0, pd.NA)).dropna()
+    atr_ratio_hist = ((hist_high - hist_low) / atr_series.replace(0.0, float("nan"))).dropna()
     if atr_ratio_window > 0:
         atr_ratio_hist = atr_ratio_hist.iloc[-atr_ratio_window:]
     if not atr_ratio_hist.empty:
+        min_quantile = min(max(min_quantile, 0.0), 1.0)
+        max_quantile = min(max(max_quantile, 0.0), 1.0)
         p50 = float(atr_ratio_hist.quantile(0.50))
         p75 = float(atr_ratio_hist.quantile(0.75))
         p90 = float(atr_ratio_hist.quantile(0.90))
         p95 = float(atr_ratio_hist.quantile(0.95))
-        dynamic_min = max(min_floor, min(min_atr_ratio, float(atr_ratio_hist.quantile(min_quantile)) * 0.60))
-        dynamic_max = max(max_atr_ratio, float(atr_ratio_hist.quantile(max_quantile)) * max(max_buffer, 1.0))
+        min_from_dist = float(atr_ratio_hist.quantile(min_quantile)) * 0.60
+        max_from_dist = float(atr_ratio_hist.quantile(max_quantile)) * max(max_buffer, 1.0)
+        dynamic_min = max(min_floor, min(min_from_dist, max_from_dist - 1e-6))
+        dynamic_max = max(max_from_dist, dynamic_min + 1e-6)
     else:
         p50 = p75 = p90 = p95 = 0.0
         dynamic_min = min_atr_ratio
