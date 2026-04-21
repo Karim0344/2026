@@ -26,6 +26,7 @@ from flexbot.ai.regime import detect_regime
 from flexbot.ai.selector import selector_adjustment
 from flexbot.ai.context_scorer import ContextScorer
 from flexbot.ai.pattern_scorer import PatternScorer
+from flexbot.ai.learning_pipeline import LearningPipeline
 
 
 @dataclass
@@ -96,6 +97,7 @@ class TradingEngine:
             store_learning_path=self.cfg.store_learning_path,
             weight=self.cfg.pattern_score_weight,
         )
+        self.learning_pipeline = LearningPipeline(cfg=self.cfg)
 
     def start(self):
         mt5_initialize_started = False
@@ -232,6 +234,16 @@ class TradingEngine:
             return
         self._last_learning_refresh = now_ts
         try:
+            if self.cfg.enable_statistical_learning or self.cfg.enable_pattern_learning:
+                result = self.learning_pipeline.run(symbol=self.cfg.symbol)
+                logging.info(
+                    "LEARNING_PIPELINE_DONE history_rows=%s feature_rows=%s outcome_rows=%s context_rows=%s pattern_rows=%s",
+                    result.history_rows,
+                    result.feature_rows,
+                    result.outcome_rows,
+                    result.context_rows,
+                    result.pattern_rows,
+                )
             self.context_scorer.refresh()
             self.pattern_scorer.refresh()
             logging.info(
@@ -622,6 +634,9 @@ class TradingEngine:
                         regime=regime,
                         strategy_name=intent.reason,
                         side=("long" if intent.is_long else "short"),
+                        symbol=self.cfg.symbol,
+                        timeframe=self.cfg.timeframe,
+                        bar_time=closed_bar_time,
                     )
                     base_confidence = confidence_score(
                         features=features,

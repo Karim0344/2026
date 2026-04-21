@@ -23,6 +23,9 @@ def build_feature_snapshot(
     regime: str = "",
     strategy_name: str = "",
     side: str = "",
+    symbol: str = "",
+    timeframe: str = "",
+    bar_time: int = 0,
 ) -> dict[str, Any]:
     debug = intent_debug or {}
 
@@ -37,15 +40,25 @@ def build_feature_snapshot(
     breakout_ok_long = bool(debug.get("breakout_ok_long", False))
     breakout_ok_short = bool(debug.get("breakout_ok_short", False))
 
-    bar_time = int(debug.get("bar_time", 0) or 0)
-    dt = datetime.fromtimestamp(bar_time, tz=timezone.utc) if bar_time else datetime.now(timezone.utc)
-    session_name = str(debug.get("session", "") or _session_from_hour(dt.hour))
+    resolved_bar_time = int(debug.get("bar_time", 0) or bar_time or 0)
+    dt = datetime.fromtimestamp(resolved_bar_time, tz=timezone.utc) if resolved_bar_time else datetime.now(timezone.utc)
+
+    resolved_symbol = str(debug.get("symbol", "") or symbol)
+    resolved_timeframe = str(debug.get("timeframe", "") or timeframe)
+    session_name = str(debug.get("session_name", "") or debug.get("session", "") or _session_from_hour(dt.hour))
+
+    body_size = float(debug.get("body_size", debug.get("body", 0.0)) or 0.0)
+    wick_ratio = float(debug.get("wick_ratio", 0.0) or 0.0)
+    if wick_ratio <= 0 and body_size > 0:
+        wick_top = float(debug.get("wick_top", 0.0) or 0.0)
+        wick_bottom = float(debug.get("wick_bottom", 0.0) or 0.0)
+        wick_ratio = (wick_top + wick_bottom) / body_size
 
     return {
         "signal_reason": signal_reason,
-        "bar_time": bar_time,
-        "symbol": str(debug.get("symbol", "")),
-        "timeframe": str(debug.get("timeframe", "")),
+        "bar_time": resolved_bar_time,
+        "symbol": resolved_symbol,
+        "timeframe": resolved_timeframe,
         "strategy_name": strategy_name,
         "side": side,
         "weekday": dt.weekday(),
@@ -67,8 +80,8 @@ def build_feature_snapshot(
         "momentum": bool(debug.get("momentum", bullish_close or bearish_close)),
         "breakout": bool(debug.get("breakout", breakout_ok_long or breakout_ok_short)),
         "regime": str(regime),
-        "body_size": float(debug.get("body_size", 0.0) or 0.0),
-        "wick_ratio": float(debug.get("wick_ratio", 0.0) or 0.0),
+        "body_size": body_size,
+        "wick_ratio": wick_ratio,
         "compression_flag": bool(debug.get("compression_flag", False)),
         "breakout_pressure_up": bool(debug.get("breakout_pressure_up", False)),
         "breakout_pressure_down": bool(debug.get("breakout_pressure_down", False)),
@@ -76,8 +89,8 @@ def build_feature_snapshot(
         "three_candle_reversal": bool(debug.get("three_candle_reversal", False)),
         "rising_lows": bool(debug.get("rising_lows", False)),
         "falling_highs": bool(debug.get("falling_highs", False)),
-        "mid_range_flag": bool(debug.get("mid_range_candle", False)),
-        "session": str(debug.get("session", "")),
+        "mid_range_flag": bool(debug.get("mid_range_candle", debug.get("in_middle", False))),
+        "session": str(debug.get("session", "") or session_name),
         "spread_points": int(spread_points),
         "max_spread_points": int(max_spread_points),
     }

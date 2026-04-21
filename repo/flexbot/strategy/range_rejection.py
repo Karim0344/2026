@@ -56,6 +56,10 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
     c0 = df.iloc[-2]
     c1 = df.iloc[-3]
 
+    bar_time = int(c0["time"])
+    session_hour = client.broker_datetime_utc(symbol).hour
+    session = "London" if 7 <= session_hour < 13 else ("London/NY_overlap" if 13 <= session_hour < 17 else ("New_York" if session_hour >= 17 else "Asia"))
+
     close = float(c0["close"])
     open_ = float(c0["open"])
     high = float(c0["high"])
@@ -98,6 +102,8 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
 
     wick_top = high - max(close, open_)
     wick_bottom = min(close, open_) - low
+    body_size = body
+    wick_ratio = (wick_top + wick_bottom) / max(body_size, 1e-9)
     zone_mid = (high_zone + low_zone) / 2.0
     close_pos = (close - low_zone) / max(range_width, 1e-9)
     near_top = high >= (high_zone - touch_tol)
@@ -114,6 +120,19 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
     middle_override_bottom = fake_break_bottom and (reclaim_from_bottom or reclaim_from_bottom_strict)
 
     debug = {
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "bar_time": bar_time,
+        "session": session,
+        "body_size": round(float(body_size), 5),
+        "wick_ratio": round(float(wick_ratio), 6),
+        "compression_flag": bool(range_width <= (atr * 2.0)),
+        "breakout_pressure_up": bool(rising_lows := ((float(c0["low"]) > float(c1["low"])) and (float(c1["low"]) > float(df.iloc[-4]["low"])))),
+        "breakout_pressure_down": bool(falling_highs := ((float(c0["high"]) < float(c1["high"])) and (float(c1["high"]) < float(df.iloc[-4]["high"])))),
+        "rising_lows": bool(rising_lows),
+        "falling_highs": bool(falling_highs),
+        "three_candle_breakout": bool(close > max(float(c1["high"]), float(df.iloc[-4]["high"]))),
+        "three_candle_reversal": bool((close > open_) and (float(c1["close"]) < float(c1["open"])) and (float(df.iloc[-4]["close"]) < float(df.iloc[-4]["open"]))),
         "high_zone": round(high_zone, 5),
         "low_zone": round(low_zone, 5),
         "atr": round(float(atr), 5),
