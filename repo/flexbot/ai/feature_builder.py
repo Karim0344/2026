@@ -72,7 +72,14 @@ def build_features(df: pd.DataFrame, strategy_name: str, symbol: str, timeframe:
     out["symbol"] = symbol
     out["timeframe"] = timeframe
 
-    return out.replace([np.inf, -np.inf], np.nan).fillna(0)
+    out = out.replace([np.inf, -np.inf], np.nan)
+    numeric_cols = out.select_dtypes(include=[np.number, "bool"]).columns
+    object_cols = [c for c in out.columns if c not in numeric_cols]
+    if len(numeric_cols) > 0:
+        out.loc[:, numeric_cols] = out.loc[:, numeric_cols].fillna(0)
+    if object_cols:
+        out.loc[:, object_cols] = out.loc[:, object_cols].fillna("")
+    return out
 
 
 def _atr(df: pd.DataFrame, period: int = 14) -> pd.Series:

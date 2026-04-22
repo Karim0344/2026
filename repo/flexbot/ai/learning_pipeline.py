@@ -21,6 +21,9 @@ class LearningRunResult:
     outcome_rows: int = 0
     context_rows: int = 0
     pattern_rows: int = 0
+    history_path: str = ""
+    features_path: str = ""
+    outcomes_path: str = ""
     context_path: str = ""
     pattern_path: str = ""
     summary_path: str = ""
@@ -51,11 +54,13 @@ class LearningPipeline:
             if history_frames
             else pd.DataFrame()
         )
+        history_path = self._save_learning_frame(history_df, "history")
 
         if history_df.empty:
+            logging.info("HISTORY_REFRESHED rows=0 path=%s", history_path)
             logging.info("FEATURES_BUILT rows=0")
             logging.info("OUTCOMES_LABELED rows=0")
-            return LearningRunResult()
+            return LearningRunResult(history_path=str(history_path))
 
         features_frames: list[pd.DataFrame] = []
         for tf in timeframes:
@@ -80,10 +85,12 @@ class LearningPipeline:
             if features_frames
             else pd.DataFrame()
         )
-        logging.info("FEATURES_BUILT rows=%s", len(features_df))
+        features_path = self._save_learning_frame(features_df, "features")
+        logging.info("FEATURES_BUILT rows=%s path=%s", len(features_df), features_path)
 
         outcomes_df = label_outcomes(features_df)
-        logging.info("OUTCOMES_LABELED rows=%s", len(outcomes_df))
+        outcomes_path = self._save_learning_frame(outcomes_df, "outcomes")
+        logging.info("OUTCOMES_LABELED rows=%s path=%s", len(outcomes_df), outcomes_path)
 
         context_table = build_context_edge_table(
             outcomes_df,
@@ -109,6 +116,9 @@ class LearningPipeline:
             outcome_rows=len(outcomes_df),
             context_rows=len(context_table),
             pattern_rows=len(pattern_table),
+            history_path=str(history_path),
+            features_path=str(features_path),
+            outcomes_path=str(outcomes_path),
             context_path=str(context_path),
             pattern_path=str(pattern_path),
             summary_path=str(summary_path),
@@ -135,3 +145,9 @@ class LearningPipeline:
         regime = regime.mask(close_pos > 0.8, "range_breakout_pressure_up")
         regime = regime.mask(close_pos < 0.2, "range_breakout_pressure_down")
         return regime
+
+    def _save_learning_frame(self, df: pd.DataFrame, name: str) -> Path:
+        target = Path(self.cfg.store_learning_path) / f"{name}.parquet"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(target, index=False)
+        return target
