@@ -222,24 +222,35 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
     if long_ok:
         if trend_score_long < min_score and effective_min_score < min_score:
             debug["paper_relaxed_entry"] = True
-            return TradeIntent(True, True, entry=entry, sl=sl_long, batch_id=batch_id, reason="PRO_LONG_PAPER", debug=debug)
-        return TradeIntent(True, True, entry=entry, sl=sl_long, batch_id=batch_id, reason="PRO_LONG", debug=debug)
+            return TradeIntent(True, True, entry=entry, sl=sl_long, batch_id=batch_id, reason="PRO_LONG_PAPER", debug=_with_side_consistency(debug, is_long=True))
+        return TradeIntent(True, True, entry=entry, sl=sl_long, batch_id=batch_id, reason="PRO_LONG", debug=_with_side_consistency(debug, is_long=True))
 
     if short_ok:
         if trend_score_short < min_score and effective_min_score < min_score:
             debug["paper_relaxed_entry"] = True
-            return TradeIntent(True, False, entry=entry, sl=sl_short, batch_id=batch_id, reason="PRO_SHORT_PAPER", debug=debug)
-        return TradeIntent(True, False, entry=entry, sl=sl_short, batch_id=batch_id, reason="PRO_SHORT", debug=debug)
+            return TradeIntent(True, False, entry=entry, sl=sl_short, batch_id=batch_id, reason="PRO_SHORT_PAPER", debug=_with_side_consistency(debug, is_long=False))
+        return TradeIntent(True, False, entry=entry, sl=sl_short, batch_id=batch_id, reason="PRO_SHORT", debug=_with_side_consistency(debug, is_long=False))
 
     if near_long_ok:
         debug["paper_near_signal_entry"] = True
-        return TradeIntent(True, True, entry=entry, sl=sl_long, batch_id=batch_id, reason="PRO_LONG_PAPER_NEAR", debug=debug)
+        return TradeIntent(True, True, entry=entry, sl=sl_long, batch_id=batch_id, reason="PRO_LONG_PAPER_NEAR", debug=_with_side_consistency(debug, is_long=True))
 
     if near_short_ok:
         debug["paper_near_signal_entry"] = True
-        return TradeIntent(True, False, entry=entry, sl=sl_short, batch_id=batch_id, reason="PRO_SHORT_PAPER_NEAR", debug=debug)
+        return TradeIntent(True, False, entry=entry, sl=sl_short, batch_id=batch_id, reason="PRO_SHORT_PAPER_NEAR", debug=_with_side_consistency(debug, is_long=False))
 
     fail_reason = "trend_fail"
     if trend_score_long >= max(min_score - near_signal_gap, 0) or trend_score_short >= max(min_score - near_signal_gap, 0):
         fail_reason = "trend_near_signal"
     return TradeIntent(False, entry=entry, batch_id=batch_id, reason=fail_reason, debug=debug)
+
+
+def _with_side_consistency(debug: dict[str, Any], is_long: bool) -> dict[str, Any]:
+    out = dict(debug)
+    out["trend_ok"] = bool(out.get("trend_ok_long")) if is_long else bool(out.get("trend_ok_short"))
+    out["htf_ok"] = bool(out.get("htf_ok_long")) if is_long else bool(out.get("htf_ok_short"))
+    out["pullback"] = bool(out.get("pullback_ok_long")) if is_long else bool(out.get("pullback_ok_short"))
+    out["momentum"] = bool(out.get("bullish_close")) if is_long else bool(out.get("bearish_close"))
+    out["breakout"] = bool(out.get("breakout_ok_long")) if is_long else bool(out.get("breakout_ok_short"))
+    out["intended_side"] = "long" if is_long else "short"
+    return out

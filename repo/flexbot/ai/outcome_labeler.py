@@ -9,7 +9,7 @@ def label_outcomes(df: pd.DataFrame, horizon_bars: int = 20, risk_atr_mult: floa
 
     out = df.copy()
     atr = out.get("atr", pd.Series([0.0] * len(out)))
-    risk = (atr * risk_atr_mult).replace(0, pd.NA).fillna(method="bfill").fillna(method="ffill").fillna(1e-6)
+    risk = (atr * risk_atr_mult).replace(0, pd.NA).bfill().ffill().fillna(1e-6)
 
     out["future_return_5_bars"] = (out["close"].shift(-5) - out["close"]) / risk
     out["future_return_10_bars"] = (out["close"].shift(-10) - out["close"]) / risk

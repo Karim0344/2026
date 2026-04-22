@@ -237,12 +237,18 @@ class TradingEngine:
             if self.cfg.enable_statistical_learning or self.cfg.enable_pattern_learning:
                 result = self.learning_pipeline.run(symbol=self.cfg.symbol)
                 logging.info(
-                    "LEARNING_PIPELINE_DONE history_rows=%s feature_rows=%s outcome_rows=%s context_rows=%s pattern_rows=%s",
+                    "LEARNING_PIPELINE_DONE history_rows=%s feature_rows=%s outcome_rows=%s context_rows=%s pattern_rows=%s history_path=%s features_path=%s outcomes_path=%s context_path=%s pattern_path=%s summary_path=%s",
                     result.history_rows,
                     result.feature_rows,
                     result.outcome_rows,
                     result.context_rows,
                     result.pattern_rows,
+                    result.history_path,
+                    result.features_path,
+                    result.outcomes_path,
+                    result.context_path,
+                    result.pattern_path,
+                    result.summary_path,
                 )
             self.context_scorer.refresh()
             self.pattern_scorer.refresh()
@@ -638,6 +644,19 @@ class TradingEngine:
                         timeframe=self.cfg.timeframe,
                         bar_time=closed_bar_time,
                     )
+                    if not features.get("feature_side_consistent", True):
+                        logging.warning(
+                            "FEATURE_SIDE_MISMATCH batch_id=%s strategy=%s side=%s trend_ok_long=%s trend_ok_short=%s htf_ok_long=%s htf_ok_short=%s trend_ok=%s htf_ok=%s",
+                            intent.batch_id,
+                            intent.reason,
+                            features.get("side"),
+                            features.get("trend_ok_long"),
+                            features.get("trend_ok_short"),
+                            features.get("htf_ok_long"),
+                            features.get("htf_ok_short"),
+                            features.get("trend_ok"),
+                            features.get("htf_ok"),
+                        )
                     base_confidence = confidence_score(
                         features=features,
                         is_long=bool(intent.is_long),

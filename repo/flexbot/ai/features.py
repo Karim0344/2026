@@ -54,13 +54,25 @@ def build_feature_snapshot(
         wick_bottom = float(debug.get("wick_bottom", 0.0) or 0.0)
         wick_ratio = (wick_top + wick_bottom) / body_size
 
+    normalized_side = str(side or "").lower()
+    side_is_long = normalized_side == "long"
+    side_is_short = normalized_side == "short"
+
+    side_trend_ok = trend_ok_long if side_is_long else (trend_ok_short if side_is_short else (trend_ok_long or trend_ok_short))
+    side_htf_ok = htf_ok_long if side_is_long else (htf_ok_short if side_is_short else (htf_ok_long or htf_ok_short))
+    side_pullback_ok = (
+        pullback_ok_long if side_is_long else (pullback_ok_short if side_is_short else (pullback_ok_long or pullback_ok_short))
+    )
+    side_momentum_ok = bullish_close if side_is_long else (bearish_close if side_is_short else (bullish_close or bearish_close))
+    side_breakout_ok = breakout_ok_long if side_is_long else (breakout_ok_short if side_is_short else (breakout_ok_long or breakout_ok_short))
+
     return {
         "signal_reason": signal_reason,
         "bar_time": resolved_bar_time,
         "symbol": resolved_symbol,
         "timeframe": resolved_timeframe,
         "strategy_name": strategy_name,
-        "side": side,
+        "side": normalized_side,
         "weekday": dt.weekday(),
         "hour": dt.hour,
         "session_name": session_name,
@@ -74,11 +86,21 @@ def build_feature_snapshot(
         "bearish_close": bearish_close,
         "breakout_ok_long": breakout_ok_long,
         "breakout_ok_short": breakout_ok_short,
-        "trend_ok": bool(debug.get("trend_ok", trend_ok_long or trend_ok_short)),
-        "htf_ok": bool(debug.get("htf_ok", htf_ok_long or htf_ok_short)),
-        "pullback": bool(debug.get("pullback", pullback_ok_long or pullback_ok_short)),
-        "momentum": bool(debug.get("momentum", bullish_close or bearish_close)),
-        "breakout": bool(debug.get("breakout", breakout_ok_long or breakout_ok_short)),
+        "trend_ok": bool(side_trend_ok),
+        "htf_ok": bool(side_htf_ok),
+        "pullback": bool(side_pullback_ok),
+        "momentum": bool(side_momentum_ok),
+        "breakout": bool(side_breakout_ok),
+        "feature_side_consistent": bool(
+            (not side_is_long and not side_is_short)
+            or (
+                bool(debug.get("trend_ok", side_trend_ok)) == bool(side_trend_ok)
+                and bool(debug.get("htf_ok", side_htf_ok)) == bool(side_htf_ok)
+                and bool(debug.get("pullback", side_pullback_ok)) == bool(side_pullback_ok)
+                and bool(debug.get("momentum", side_momentum_ok)) == bool(side_momentum_ok)
+                and bool(debug.get("breakout", side_breakout_ok)) == bool(side_breakout_ok)
+            )
+        ),
         "regime": str(regime),
         "body_size": body_size,
         "wick_ratio": wick_ratio,
