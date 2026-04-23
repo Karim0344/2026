@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import pandas as pd
+from flexbot.ai.storage import read_table, resolve_existing_path
 
 
 class ContextScorer:
@@ -11,10 +12,8 @@ class ContextScorer:
         self._cache: pd.DataFrame | None = None
 
     def refresh(self) -> None:
-        if self.path.exists():
-            self._cache = pd.read_parquet(self.path)
-        else:
-            self._cache = pd.DataFrame()
+        existing = resolve_existing_path(self.path)
+        self._cache = read_table(self.path) if existing is not None else pd.DataFrame()
 
     def score(self, lookup: dict, min_samples: int = 20) -> tuple[int, str]:
         if self._cache is None:

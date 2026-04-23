@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import pandas as pd
+from flexbot.ai.storage import write_table
 
 
 PATTERN_COLS = [
@@ -42,5 +43,4 @@ def save_pattern_edge_table(table: pd.DataFrame, store_path: str) -> Path:
     p = Path(store_path)
     p.mkdir(parents=True, exist_ok=True)
     target = p / "pattern_edge_table.parquet"
-    table.to_parquet(target, index=False)
-    return target
+    return write_table(df=table, preferred_path=target)

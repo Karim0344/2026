@@ -10,6 +10,7 @@ from flexbot.ai.feature_builder import build_features
 from flexbot.ai.outcome_labeler import label_outcomes
 from flexbot.ai.pattern_edge_engine import build_pattern_edge_table, save_pattern_edge_table
 from flexbot.ai.statistical_edge_engine import build_context_edge_table, save_context_edge_table
+from flexbot.ai.storage import write_table
 from flexbot.data.historical_data_recorder import HistoricalDataRecorder
 from flexbot.reporting.learning_summary import build_learning_summary, save_learning_summary
 
@@ -35,6 +36,7 @@ class LearningPipeline:
         self.recorder = HistoricalDataRecorder(cfg)
 
     def run(self, symbol: str) -> LearningRunResult:
+        logging.info("LEARNING_PIPELINE_START symbol=%s", symbol)
         timeframes = self._timeframes_to_refresh()
         history_frames: list[pd.DataFrame] = []
 
@@ -60,6 +62,7 @@ class LearningPipeline:
             logging.info("HISTORY_REFRESHED rows=0 path=%s", history_path)
             logging.info("FEATURES_BUILT rows=0")
             logging.info("OUTCOMES_LABELED rows=0")
+            logging.info("LEARNING_PIPELINE_END symbol=%s status=history_empty", symbol)
             return LearningRunResult(history_path=str(history_path))
 
         features_frames: list[pd.DataFrame] = []
@@ -109,6 +112,7 @@ class LearningPipeline:
         summary = build_learning_summary(context_table=context_table, pattern_table=pattern_table)
         summary_path = save_learning_summary(summary=summary, report_dir=self.cfg.store_reports_path)
         logging.info("LEARNING_SUMMARY_SAVED path=%s", summary_path)
+        logging.info("LEARNING_PIPELINE_END symbol=%s status=ok", symbol)
 
         return LearningRunResult(
             history_rows=len(history_df),
@@ -148,6 +152,12 @@ class LearningPipeline:
 
     def _save_learning_frame(self, df: pd.DataFrame, name: str) -> Path:
         target = Path(self.cfg.store_learning_path) / f"{name}.parquet"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        df.to_parquet(target, index=False)
-        return target
+        actual = write_table(df=df, preferred_path=target)
+        logging.info(
+            "LEARNING_FRAME_SAVED name=%s rows=%s path=%s format=%s",
+            name,
+            len(df),
+            actual,
+            actual.suffix.lstrip("."),
+        )
+        return actual
