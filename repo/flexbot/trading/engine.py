@@ -27,6 +27,7 @@ from flexbot.ai.selector import selector_adjustment
 from flexbot.ai.context_scorer import ContextScorer
 from flexbot.ai.pattern_scorer import PatternScorer
 from flexbot.ai.learning_pipeline import LearningPipeline
+from flexbot.reporting.run_summary import save_run_summary
 
 
 @dataclass
@@ -140,6 +141,7 @@ class TradingEngine:
         self.stop_event.set()
         self._join_worker_threads(timeout=2.0)
         self.status.running = False
+        self._write_run_summary()
         self._shutdown_mt5()
         logging.info("ENGINE_STOPPED")
 
@@ -320,15 +322,40 @@ class TradingEngine:
             return
         session_pct = (self.session_block_count / total_checks) * 100.0
         spread_pct = (self.spread_block_count / total_checks) * 100.0
+        evaluated_pct = (self.processed_bars / total_checks) * 100.0
         logging.info(
-            "ENTRY_FILTERS checks=%s processed_bars=%s session_blocked=%s(%.1f%%) spread_blocked=%s(%.1f%%)",
+            "ENTRY_FILTERS checks=%s processed_bars=%s(%.1f%%) session_blocked=%s(%.1f%%) spread_blocked=%s(%.1f%%)",
             total_checks,
             self.processed_bars,
+            evaluated_pct,
             self.session_block_count,
             session_pct,
             self.spread_block_count,
             spread_pct,
         )
+
+    def _write_run_summary(self) -> None:
+        total_checks = self.processed_bars + self.session_block_count + self.spread_block_count
+        if total_checks <= 0:
+            return
+        summary = {
+            "symbol": self.cfg.symbol,
+            "timeframe": self.cfg.timeframe,
+            "checks_total": total_checks,
+            "processed_bars": self.processed_bars,
+            "processed_bars_pct": round((self.processed_bars / total_checks) * 100.0, 2),
+            "session_blocked": self.session_block_count,
+            "session_blocked_pct": round((self.session_block_count / total_checks) * 100.0, 2),
+            "spread_blocked": self.spread_block_count,
+            "spread_blocked_pct": round((self.spread_block_count / total_checks) * 100.0, 2),
+            "paper_total": self.status.paper_total,
+            "paper_open": self.status.paper_open,
+            "paper_closed": self.status.paper_closed,
+            "paper_winrate": self.status.paper_winrate,
+            "paper_avg_r": self.status.paper_avg_r,
+        }
+        target = save_run_summary(summary=summary, report_dir=self.cfg.store_reports_path)
+        logging.info("RUN_SUMMARY_SAVED path=%s summary=%s", target, summary)
 
     def _log_strategy_heartbeat(self):
         now = time.time()
