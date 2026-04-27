@@ -3,6 +3,7 @@ import threading
 import time
 from dataclasses import dataclass
 from collections import Counter
+from datetime import datetime, timezone
 import MetaTrader5 as mt5
 
 from flexbot.core.config import BotConfig
@@ -54,6 +55,17 @@ class EngineStatus:
     session_block_count: int = 0
     spread_block_count: int = 0
     processed_bars: int = 0
+    loop_checks: int = 0
+    bars_seen: int = 0
+    bars_in_session: int = 0
+    bars_spread_ok: int = 0
+    bars_evaluated: int = 0
+    candidate_bars: int = 0
+    signal_bars: int = 0
+    run_id: str = ""
+    current_run_total: int = 0
+    current_run_closed: int = 0
+    all_time_total: int = 0
 
 
 class TradingEngine:
@@ -71,7 +83,10 @@ class TradingEngine:
         self.trading_disabled_today = False
         self.signal_count = 0
 
-        self.status = EngineStatus()
+        self.run_started_at = datetime.now(timezone.utc)
+        self.run_id = self.run_started_at.strftime("%Y%m%dT%H%M%SZ")
+        self.build_version = "flexbot"
+        self.status = EngineStatus(run_id=self.run_id)
         self._last_diag_err_ts = 0.0
         self._last_market_closed_ts = 0.0
         self._last_heartbeat = 0.0
@@ -82,6 +97,13 @@ class TradingEngine:
         self.session_block_count = 0
         self.spread_block_count = 0
         self.processed_bars = 0
+        self.loop_checks = 0
+        self.bars_seen = 0
+        self.bars_in_session = 0
+        self.bars_spread_ok = 0
+        self.bars_evaluated = 0
+        self.candidate_bars = 0
+        self.signal_bars = 0
         self._last_block_diag = 0.0
         self._last_learning_refresh = 0.0
         self.eval_window_bars = 100
@@ -169,7 +191,7 @@ class TradingEngine:
 
 
     def _refresh_paper_stats(self):
-        stats = load_paper_stats()
+        stats = load_paper_stats(run_id=self.run_id)
         self.status.paper_total = int(stats.get("total", 0))
         self.status.paper_open = int(stats.get("open", 0))
         self.status.paper_closed = int(stats.get("closed", 0))
@@ -179,6 +201,9 @@ class TradingEngine:
         self.status.paper_tp2 = int(stats.get("tp2", 0))
         self.status.paper_tp3 = int(stats.get("tp3", 0))
         self.status.paper_sl = int(stats.get("losses", 0))
+        self.status.current_run_total = int(stats.get("current_run_total", self.status.paper_total))
+        self.status.current_run_closed = int(stats.get("current_run_closed", self.status.paper_closed))
+        self.status.all_time_total = int(stats.get("all_time_total", self.status.paper_total))
 
     def _update_guards(self):
         self._reset_day_if_needed()
@@ -317,17 +342,22 @@ class TradingEngine:
             return
         self._last_block_diag = now
 
-        total_checks = self.processed_bars + self.session_block_count + self.spread_block_count
-        if total_checks <= 0:
+        total_bar_checks = self.bars_seen + self.session_block_count + self.spread_block_count
+        if total_bar_checks <= 0:
             return
-        session_pct = (self.session_block_count / total_checks) * 100.0
-        spread_pct = (self.spread_block_count / total_checks) * 100.0
-        evaluated_pct = (self.processed_bars / total_checks) * 100.0
+        session_pct = (self.session_block_count / total_bar_checks) * 100.0
+        spread_pct = (self.spread_block_count / total_bar_checks) * 100.0
+        evaluated_pct = (self.bars_evaluated / max(self.bars_seen, 1)) * 100.0
         logging.info(
-            "ENTRY_FILTERS checks=%s processed_bars=%s(%.1f%%) session_blocked=%s(%.1f%%) spread_blocked=%s(%.1f%%)",
-            total_checks,
-            self.processed_bars,
+            "ENTRY_FILTERS loop_checks=%s bars_seen=%s bars_in_session=%s bars_spread_ok=%s bars_evaluated=%s(%.1f%%) candidate_bars=%s signal_bars=%s session_blocked=%s(%.1f%%) spread_blocked=%s(%.1f%%)",
+            self.loop_checks,
+            self.bars_seen,
+            self.bars_in_session,
+            self.bars_spread_ok,
+            self.bars_evaluated,
             evaluated_pct,
+            self.candidate_bars,
+            self.signal_bars,
             self.session_block_count,
             session_pct,
             self.spread_block_count,
@@ -335,24 +365,36 @@ class TradingEngine:
         )
 
     def _write_run_summary(self) -> None:
-        total_checks = self.processed_bars + self.session_block_count + self.spread_block_count
-        if total_checks <= 0:
+        if self.loop_checks <= 0:
             return
         summary = {
+            "run_id": self.run_id,
+            "run_start_time": self.run_started_at.isoformat(),
+            "build_version": self.build_version,
             "symbol": self.cfg.symbol,
             "timeframe": self.cfg.timeframe,
-            "checks_total": total_checks,
+            "checks_total": self.loop_checks,
+            "loop_checks": self.loop_checks,
+            "bars_seen": self.bars_seen,
+            "bars_in_session": self.bars_in_session,
+            "bars_spread_ok": self.bars_spread_ok,
+            "bars_evaluated": self.bars_evaluated,
+            "candidate_bars": self.candidate_bars,
+            "signal_bars": self.signal_bars,
             "processed_bars": self.processed_bars,
-            "processed_bars_pct": round((self.processed_bars / total_checks) * 100.0, 2),
+            "processed_bars_pct": round((self.processed_bars / max(self.bars_seen, 1)) * 100.0, 2),
             "session_blocked": self.session_block_count,
-            "session_blocked_pct": round((self.session_block_count / total_checks) * 100.0, 2),
+            "session_blocked_pct": round((self.session_block_count / max(self.loop_checks, 1)) * 100.0, 2),
             "spread_blocked": self.spread_block_count,
-            "spread_blocked_pct": round((self.spread_block_count / total_checks) * 100.0, 2),
+            "spread_blocked_pct": round((self.spread_block_count / max(self.loop_checks, 1)) * 100.0, 2),
             "paper_total": self.status.paper_total,
             "paper_open": self.status.paper_open,
             "paper_closed": self.status.paper_closed,
             "paper_winrate": self.status.paper_winrate,
             "paper_avg_r": self.status.paper_avg_r,
+            "current_run_total": self.status.current_run_total,
+            "current_run_closed": self.status.current_run_closed,
+            "all_time_total": self.status.all_time_total,
         }
         target = save_run_summary(summary=summary, report_dir=self.cfg.store_reports_path)
         logging.info("RUN_SUMMARY_SAVED path=%s summary=%s", target, summary)
@@ -388,8 +430,12 @@ class TradingEngine:
         is_candidate = bool(valid) or self._is_candidate_reason(reason)
         if is_candidate:
             self.window_candidate_signals += 1
+            self.candidate_bars += 1
+            self.status.candidate_bars = self.candidate_bars
         if valid:
             self.window_true_signals += 1
+            self.signal_bars += 1
+            self.status.signal_bars = self.signal_bars
         if "near_signal" in (reason or ""):
             self.window_near_signals += 1
         if not valid:
@@ -431,6 +477,8 @@ class TradingEngine:
     def _entry_loop(self):
         while not self.stop_event.is_set():
             try:
+                self.loop_checks += 1
+                self.status.loop_checks = self.loop_checks
                 self._update_guards()
                 self._refresh_learning_tables_if_needed()
                 can_enter, guard_reason = self._can_enter()
@@ -475,7 +523,15 @@ class TradingEngine:
                     continue
 
                 self.status.loop_state = "new_bar"
+                self.bars_seen += 1
+                self.bars_in_session += 1
+                self.bars_spread_ok += 1
+                self.status.bars_seen = self.bars_seen
+                self.status.bars_in_session = self.bars_in_session
+                self.status.bars_spread_ok = self.bars_spread_ok
                 self.processed_bars += 1
+                self.bars_evaluated += 1
+                self.status.bars_evaluated = self.bars_evaluated
                 self.status.processed_bars = self.processed_bars
                 logging.info(
                     "NEW_BAR symbol=%s tf=%s closed_bar_time=%s",
@@ -649,6 +705,50 @@ class TradingEngine:
                 self._log_strategy_reason_change(intent.reason)
                 self._track_signal_flow_window(reason=intent.reason, valid=bool(intent.valid))
                 self._log_filter_diagnostics()
+                if (not intent.valid) and any(
+                    tag in (intent.reason or "")
+                    for tag in ("trend_near_signal", "range_not_confirmed", "range_idle", "range_breakout_pressure")
+                ):
+                    try:
+                        spread_points = int(client.get_symbol_diagnostics(self.cfg.symbol).spread_points)
+                    except Exception:
+                        spread_points = self.cfg.max_spread_points
+                    reason_l = (intent.reason or "").lower()
+                    side_guess = "short" if ("short" in reason_l or "top" in reason_l) else "long"
+                    candidate_features = build_feature_snapshot(
+                        signal_reason=intent.reason,
+                        intent_debug=intent.debug,
+                        spread_points=spread_points,
+                        max_spread_points=self.cfg.max_spread_points,
+                        regime=regime,
+                        strategy_name=intent.reason or "candidate",
+                        side=side_guess,
+                        symbol=self.cfg.symbol,
+                        timeframe=self.cfg.timeframe,
+                        bar_time=closed_bar_time,
+                    )
+                    context_score, context_reason = (0, "context_disabled")
+                    if self.cfg.enable_statistical_learning and self.cfg.enable_context_score:
+                        context_score, context_reason = self.context_scorer.score(
+                            lookup=candidate_features,
+                            min_samples=self.cfg.min_samples_context,
+                        )
+                    pattern_score, pattern_reason = (0, "pattern_disabled")
+                    if self.cfg.enable_pattern_learning and self.cfg.enable_pattern_score:
+                        pattern_score, pattern_reason = self.pattern_scorer.score(
+                            lookup=candidate_features,
+                            min_samples=self.cfg.min_samples_pattern,
+                        )
+                    logging.info(
+                        "CANDIDATE_AI_SCORE regime=%s reason=%s side=%s context_score=%s pattern_score=%s context_reason=%s pattern_reason=%s",
+                        regime,
+                        intent.reason,
+                        side_guess,
+                        context_score,
+                        pattern_score,
+                        context_reason,
+                        pattern_reason,
+                    )
 
                 if intent.valid and intent.batch_id != self.last_batch_id:
                     spread_points = 0
@@ -863,6 +963,9 @@ class TradingEngine:
                                 confidence_score=confidence,
                                 features=features,
                                 initial_r=abs(entry - float(intent.sl)),
+                                run_id=self.run_id,
+                                run_start_time=self.run_started_at.isoformat(),
+                                build_version=self.build_version,
                             )
                             upsert_paper_trade(trade)
                             log_trade_open(trade=trade, path=self.cfg.ai_memory_path)
