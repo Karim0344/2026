@@ -29,6 +29,9 @@ class PaperTrade:
     mae_r: float = 0.0
     exit_reason: str = ""
     result_r: float = 0.0
+    run_id: str = ""
+    run_start_time: str = ""
+    build_version: str = ""
 
 
 def load_paper_trades(path: str = "paper_trades.json") -> list[PaperTrade]:
@@ -85,8 +88,28 @@ def _trade_strategy_type(trade: PaperTrade) -> str:
     return "other"
 
 
-def compute_paper_stats(path: str = "paper_trades.json") -> dict:
-    trades = load_paper_trades(path)
+def _empty_stats() -> dict:
+    return {
+        "total": 0,
+        "open": 0,
+        "closed": 0,
+        "wins": 0,
+        "losses": 0,
+        "tp1": 0,
+        "tp2": 0,
+        "tp3": 0,
+        "winrate": 0.0,
+        "avg_r": 0.0,
+        "total_r": 0.0,
+        "by_strategy": {},
+        "by_side": {
+            "long": {"count": 0, "winrate": 0.0, "avg_r": 0.0},
+            "short": {"count": 0, "winrate": 0.0, "avg_r": 0.0},
+        },
+    }
+
+
+def _compute_stats_from_trades(trades: list[PaperTrade]) -> dict:
 
     total = len(trades)
     open_count = 0
@@ -172,55 +195,52 @@ def compute_paper_stats(path: str = "paper_trades.json") -> dict:
     }
 
 
-def save_paper_stats(path: str = "paper_trades.json", stats_path: str = "paper_stats.json") -> dict:
-    stats = compute_paper_stats(path=path)
+def compute_paper_stats(path: str = "paper_trades.json", run_id: str | None = None) -> dict:
+    trades = load_paper_trades(path)
+    all_time = _compute_stats_from_trades(trades)
+    if not run_id:
+        return all_time
+
+    current = _compute_stats_from_trades([t for t in trades if t.run_id == run_id])
+    return {
+        **current,
+        "run_id": run_id,
+        "current_run_total": current["total"],
+        "current_run_open": current["open"],
+        "current_run_closed": current["closed"],
+        "all_time_total": all_time["total"],
+        "all_time_open": all_time["open"],
+        "all_time_closed": all_time["closed"],
+        "all_time_winrate": all_time["winrate"],
+        "all_time_avg_r": all_time["avg_r"],
+        "all_time_total_r": all_time["total_r"],
+    }
+
+
+def save_paper_stats(
+    path: str = "paper_trades.json",
+    stats_path: str = "paper_stats.json",
+    run_id: str | None = None,
+) -> dict:
+    stats = compute_paper_stats(path=path, run_id=run_id)
     with open(stats_path, "w", encoding="utf-8") as f:
         json.dump(stats, f, ensure_ascii=False, indent=2)
     return stats
 
 
-def load_paper_stats(stats_path: str = "paper_stats.json") -> dict:
+def load_paper_stats(stats_path: str = "paper_stats.json", run_id: str | None = None) -> dict:
     if not os.path.exists(stats_path):
-        return {
-            "total": 0,
-            "open": 0,
-            "closed": 0,
-            "wins": 0,
-            "losses": 0,
-            "tp1": 0,
-            "tp2": 0,
-            "tp3": 0,
-            "winrate": 0.0,
-            "avg_r": 0.0,
-            "total_r": 0.0,
-            "by_strategy": {},
-            "by_side": {
-                "long": {"count": 0, "winrate": 0.0, "avg_r": 0.0},
-                "short": {"count": 0, "winrate": 0.0, "avg_r": 0.0},
-            },
-        }
+        return compute_paper_stats(run_id=run_id)
     try:
         with open(stats_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            loaded = json.load(f)
+            if not run_id:
+                return loaded
+            if loaded.get("run_id") == run_id:
+                return loaded
+            return compute_paper_stats(run_id=run_id)
     except Exception:
-        return {
-            "total": 0,
-            "open": 0,
-            "closed": 0,
-            "wins": 0,
-            "losses": 0,
-            "tp1": 0,
-            "tp2": 0,
-            "tp3": 0,
-            "winrate": 0.0,
-            "avg_r": 0.0,
-            "total_r": 0.0,
-            "by_strategy": {},
-            "by_side": {
-                "long": {"count": 0, "winrate": 0.0, "avg_r": 0.0},
-                "short": {"count": 0, "winrate": 0.0, "avg_r": 0.0},
-            },
-        }
+        return _empty_stats()
 
 
 def _update_trade_with_bar(
