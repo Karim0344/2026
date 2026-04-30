@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 import pandas as pd
 from flexbot.ai.storage import read_table, resolve_existing_path
+from flexbot.ai.session_utils import normalize_session_name
 
 
 class ContextScorer:
@@ -21,19 +23,32 @@ class ContextScorer:
         if self._cache is None or self._cache.empty:
             return 0, "context_table_missing"
 
-        mask = pd.Series(True, index=self._cache.index)
-        for key in ("weekday", "hour", "session_name", "regime", "side", "strategy_name", "timeframe"):
-            if key in lookup:
-                mask &= self._cache[key] == lookup[key]
+        lookup = dict(lookup)
+        lookup["session_name"] = normalize_session_name(lookup.get("session_name", ""))
+        levels = [
+            ("weekday", "hour", "session_name", "regime", "side", "timeframe"),
+            ("hour", "session_name", "regime", "side", "timeframe"),
+            ("session_name", "regime", "side", "timeframe"),
+            ("regime", "side"),
+        ]
+        if lookup.get("strategy_name"):
+            levels = [("strategy_name",) + l for l in levels] + levels
 
-        row = self._cache.loc[mask].head(1)
-        if row.empty:
-            return 0, "context_no_match"
+        for idx, keys in enumerate(levels, start=1):
+            mask = pd.Series(True, index=self._cache.index)
+            for key in keys:
+                if key in lookup and key in self._cache.columns:
+                    mask &= self._cache[key] == lookup[key]
+            row = self._cache.loc[mask].sort_values("count", ascending=False).head(1)
+            if row.empty:
+                continue
+            count = int(row.iloc[0].get("count", 0))
+            if count < int(min_samples):
+                continue
+            avg_r = float(row.iloc[0].get("avg_r", 0.0))
+            raw = max(-15.0, min(15.0, avg_r * 20.0))
+            score = int(round(raw * self.weight))
+            logging.info("CONTEXT_SCORE method=backoff_level_%s count=%s avg_r=%.4f score=%s", idx, count, avg_r, score)
+            return score, f"context_backoff_match_{idx}"
 
-        count = int(row.iloc[0].get("count", 0))
-        if count < int(min_samples):
-            return 0, "context_too_few_samples"
-
-        avg_r = float(row.iloc[0].get("avg_r", 0.0))
-        raw = max(-15.0, min(15.0, avg_r * 20.0))
-        return int(round(raw * self.weight)), "context_match"
+        return 0, "context_no_match"

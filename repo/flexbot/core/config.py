@@ -50,6 +50,18 @@ class BotConfig:
     min_samples_context: int = 20
     min_samples_pattern: int = 20
 
+    min_final_score_paper: int = 45
+    min_final_score_live: int = 65
+    trend_require_htf: bool = False
+    trend_no_htf_penalty: int = 20
+    min_minutes_between_signals: int = 15
+    max_open_paper_trades: int = 1
+    duplicate_entry_atr_tolerance: float = 0.5
+    enable_strategy_edge_table: bool = True
+    strategy_edge_weight: float = 1.0
+    learning_spread_cost_points: int = 10
+    learning_slippage_points: int = 5
+
     store_history_path: str = "data/history"
     store_learning_path: str = "data/learned"
     store_reports_path: str = "reports"

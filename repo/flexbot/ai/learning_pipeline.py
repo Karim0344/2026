@@ -11,6 +11,7 @@ from flexbot.ai.outcome_labeler import label_outcomes
 from flexbot.ai.pattern_edge_engine import build_pattern_edge_table, save_pattern_edge_table
 from flexbot.ai.statistical_edge_engine import build_context_edge_table, save_context_edge_table
 from flexbot.ai.storage import write_table
+from flexbot.ai.historical_strategy_simulator import build_strategy_edge_table
 from flexbot.data.historical_data_recorder import HistoricalDataRecorder
 from flexbot.reporting.learning_summary import build_learning_summary, save_learning_summary
 
@@ -27,6 +28,7 @@ class LearningRunResult:
     outcomes_path: str = ""
     context_path: str = ""
     pattern_path: str = ""
+    strategy_path: str = ""
     summary_path: str = ""
 
 
@@ -91,7 +93,7 @@ class LearningPipeline:
         features_path = self._save_learning_frame(features_df, "features")
         logging.info("FEATURES_BUILT rows=%s path=%s", len(features_df), features_path)
 
-        outcomes_df = label_outcomes(features_df)
+        outcomes_df = label_outcomes(features_df, spread_cost_points=self.cfg.learning_spread_cost_points, slippage_points=self.cfg.learning_slippage_points)
         outcomes_path = self._save_learning_frame(outcomes_df, "outcomes")
         logging.info("OUTCOMES_LABELED rows=%s path=%s", len(outcomes_df), outcomes_path)
 
@@ -109,6 +111,11 @@ class LearningPipeline:
         pattern_path = save_pattern_edge_table(pattern_table, self.cfg.store_learning_path)
         logging.info("PATTERN_TABLE_BUILT rows=%s path=%s", len(pattern_table), pattern_path)
 
+        strategy_table = build_strategy_edge_table(outcomes_df, min_samples=self.cfg.min_samples_context)
+        strategy_path = Path(self.cfg.store_learning_path) / "strategy_edge_table.csv"
+        strategy_table.to_csv(strategy_path, index=False)
+        logging.info("STRATEGY_EDGE_TABLE_BUILT rows=%s path=%s", len(strategy_table), strategy_path)
+
         summary = build_learning_summary(context_table=context_table, pattern_table=pattern_table)
         summary_path = save_learning_summary(summary=summary, report_dir=self.cfg.store_reports_path)
         logging.info("LEARNING_SUMMARY_SAVED path=%s", summary_path)
@@ -125,6 +132,7 @@ class LearningPipeline:
             outcomes_path=str(outcomes_path),
             context_path=str(context_path),
             pattern_path=str(pattern_path),
+            strategy_path=str(strategy_path),
             summary_path=str(summary_path),
         )
 

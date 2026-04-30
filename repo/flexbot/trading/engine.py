@@ -18,6 +18,7 @@ from flexbot.trading.paper_tracker import (
     update_open_paper_trades,
     upsert_paper_trade,
     load_paper_stats,
+    load_paper_trades,
 )
 from flexbot.ai.features import build_feature_snapshot
 from flexbot.ai.scoring import confidence_score
@@ -914,6 +915,28 @@ class TradingEngine:
                         intent.reason,
                         features,
                     )
+                    min_required = self.cfg.min_final_score_paper if self.cfg.paper_mode else self.cfg.min_final_score_live
+                    decision = "paper_signal" if self.cfg.paper_mode else "live_signal"
+                    reject_reason = ""
+                    if final_score < min_required:
+                        decision = "skip_low_final_score"
+                        reject_reason = "low_final_score"
+                    logging.info(
+                        "CANDIDATE_EVAL symbol=%s tf=%s regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s final_score=%s decision=%s reject_reason=%s",
+                        self.cfg.symbol,
+                        self.cfg.timeframe,
+                        regime,
+                        intent.reason,
+                        "long" if intent.is_long else "short",
+                        setup_score,
+                        context_score,
+                        pattern_score,
+                        0,
+                        selector_bonus,
+                        final_score,
+                        decision,
+                        reject_reason,
+                    )
                     logging.info(
                         "LIVE_DECISION regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s selector_bonus=%s spread_penalty=%s bad_session_penalty=%s final_score=%s decision=%s context_reason=%s pattern_reason=%s",
                         regime,
@@ -930,11 +953,21 @@ class TradingEngine:
                         context_reason,
                         pattern_reason,
                     )
-                    self.signal_count += 1
+                    if decision != "skip_low_final_score":
+                        self.signal_count += 1
+                    else:
+                        self.status.last_msg = f"skip_low_final_score:{final_score}<{min_required}"
+                        self._log_strategy_reason_change(self.status.last_msg)
+                        self.stop_event.wait(self.cfg.entry_check_seconds)
+                        continue
                     self.status.signal_count = self.signal_count
                     logging.info("SIGNAL_COUNT=%s day=%s", self.signal_count, self.current_day)
                     self.last_batch_id = intent.batch_id
                     if self.cfg.paper_mode:
+                        open_same = [t for t in load_paper_trades() if t.status == "open" and t.symbol == self.cfg.symbol and t.timeframe == self.cfg.timeframe]
+                        if len(open_same) >= int(self.cfg.max_open_paper_trades):
+                            logging.info("LIVE_DECISION decision=paper_open_position_blocked final_score=%s min_required=%s", final_score, min_required)
+                            continue
                         entry = 0.0
                         tp1 = 0.0
                         tp2 = 0.0
@@ -972,15 +1005,19 @@ class TradingEngine:
                             self._refresh_paper_stats()
 
                         logging.info(
-                            "PAPER_SIGNAL batch_id=%s side=%s entry=%.5f sl=%.5f tp1=%.5f tp2=%.5f tp3=%.5f reason=%s",
-                            intent.batch_id,
+                            "PAPER_SIGNAL run_id=%s strategy=%s side=%s entry=%.5f sl=%.5f tp1=%.5f tp2=%.5f tp3=%.5f final_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s",
+                            self.run_id,
+                            intent.reason,
                             "BUY" if intent.is_long else "SELL",
                             entry,
                             intent.sl,
                             tp1,
                             tp2,
                             tp3,
-                            intent.reason,
+                            final_score,
+                            context_score,
+                            pattern_score,
+                            0,
                         )
                         self.status.last_msg = "paper_signal_logged"
                         self._log_strategy_reason_change(self.status.last_msg)

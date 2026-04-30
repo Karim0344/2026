@@ -70,5 +70,16 @@
   "paper_allow_near_signals": false,
   "paper_near_extra_score": 5,
   "trend_allow_short": false,
-  "trend_short_extra_score": 10
+  "trend_short_extra_score": 10,
+  "min_final_score_paper": 45,
+  "min_final_score_live": 65,
+  "trend_require_htf": false,
+  "trend_no_htf_penalty": 20,
+  "min_minutes_between_signals": 15,
+  "max_open_paper_trades": 1,
+  "duplicate_entry_atr_tolerance": 0.5,
+  "enable_strategy_edge_table": true,
+  "strategy_edge_weight": 1.0,
+  "learning_spread_cost_points": 10,
+  "learning_slippage_points": 5
 }
