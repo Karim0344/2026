@@ -93,7 +93,7 @@ class LearningPipeline:
         features_path = self._save_learning_frame(features_df, "features")
         logging.info("FEATURES_BUILT rows=%s path=%s", len(features_df), features_path)
 
-        outcomes_df = label_outcomes(features_df, spread_cost_points=self.cfg.learning_spread_cost_points, slippage_points=self.cfg.learning_slippage_points)
+        outcomes_df = label_outcomes(features_df, spread_cost_points=self.cfg.learning_spread_cost_points, slippage_points=self.cfg.learning_slippage_points, point_size=self.cfg.learning_point_size)
         outcomes_path = self._save_learning_frame(outcomes_df, "outcomes")
         logging.info("OUTCOMES_LABELED rows=%s path=%s", len(outcomes_df), outcomes_path)
 

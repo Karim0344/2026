@@ -123,6 +123,8 @@ class TradingEngine:
             weight=self.cfg.pattern_score_weight,
         )
         self.learning_pipeline = LearningPipeline(cfg=self.cfg)
+        self._learning_lock = threading.Lock()
+        self._learning_thread: threading.Thread | None = None
         self.strategy_edge_scorer = StrategyEdgeScorer(
             store_learning_path=self.cfg.store_learning_path,
             weight=self.cfg.strategy_edge_weight,
@@ -146,6 +148,8 @@ class TradingEngine:
                 "ENGINE_MT5_READY terminal=%s symbol=%s", terminal, self.cfg.symbol
             )
             self._reset_day_if_needed(force=True)
+            if getattr(self.cfg, "learning_pipeline_mode", "startup") == "startup":
+                self._refresh_learning_tables_if_needed(force=True)
 
             self.stop_event.clear()
             self._entry_thread = threading.Thread(
@@ -261,12 +265,15 @@ class TradingEngine:
         if closed > 20 and winrate < 40:
             logging.warning("PERF_WEAK winrate=%.2f closed=%s", winrate, closed)
 
-    def _refresh_learning_tables_if_needed(self):
+    def _refresh_learning_tables_if_needed(self, force: bool = False):
         now_ts = time.time()
         refresh_s = max(60, int(self.cfg.learning_refresh_minutes) * 60)
-        if (now_ts - self._last_learning_refresh) < refresh_s:
+        if (not force) and (now_ts - self._last_learning_refresh) < refresh_s:
             return
         self._last_learning_refresh = now_ts
+        if not self._learning_lock.acquire(blocking=False):
+            logging.info("LEARNING_PIPELINE_RUNNING skip_refresh=true")
+            return
         try:
             if self.cfg.enable_statistical_learning or self.cfg.enable_pattern_learning:
                 result = self.learning_pipeline.run(symbol=self.cfg.symbol)
@@ -292,6 +299,8 @@ class TradingEngine:
             )
         except Exception as e:
             logging.warning("LEARNING_TABLE_REFRESH_FAILED err=%s", e)
+        finally:
+            self._learning_lock.release()
 
     def _spread_ok(self) -> bool:
         try:
@@ -488,7 +497,8 @@ class TradingEngine:
                 self.loop_checks += 1
                 self.status.loop_checks = self.loop_checks
                 self._update_guards()
-                self._refresh_learning_tables_if_needed()
+                if getattr(self.cfg, "learning_pipeline_mode", "startup") == "background":
+                    self._refresh_learning_tables_if_needed()
                 can_enter, guard_reason = self._can_enter()
                 if not can_enter:
                     self.status.loop_state = guard_reason
@@ -799,6 +809,12 @@ class TradingEngine:
                             features.get("trend_ok"),
                             features.get("htf_ok"),
                         )
+                    side_inconsistent = not features.get("feature_side_consistent", True)
+                    if side_inconsistent and bool(getattr(self.cfg, "block_side_inconsistent_features", True)) and not self.cfg.paper_mode:
+                        self.status.last_msg = "side_inconsistent_features"
+                        self._log_strategy_reason_change(self.status.last_msg)
+                        continue
+
                     base_confidence = confidence_score(
                         features=features,
                         is_long=bool(intent.is_long),
@@ -873,6 +889,7 @@ class TradingEngine:
 
                     spread_penalty = 0 if spread_points < self.cfg.max_spread_points else 8
                     bad_session_penalty = 3 if features.get("session_name") in ("Asia",) else 0
+                    side_penalty = 30 if side_inconsistent else 0
                     final_score = max(
                         0,
                         min(
@@ -883,7 +900,8 @@ class TradingEngine:
                             + strategy_edge_score
                             + selector_bonus
                             - spread_penalty
-                            - bad_session_penalty,
+                            - bad_session_penalty
+                            - side_penalty,
                         ),
                     )
                     confidence = int(final_score)
@@ -972,26 +990,21 @@ class TradingEngine:
                         spread_penalty,
                         bad_session_penalty,
                         final_score,
-                        "paper_signal" if self.cfg.paper_mode else "live_signal",
+                        decision,
                         context_reason,
                         pattern_reason,
                         strategy_edge_reason,
                     )
-                    if decision != "skip_low_final_score":
-                        self.signal_count += 1
-                    else:
+                    if decision == "skip_low_final_score":
                         self.status.last_msg = f"skip_low_final_score:{final_score}<{min_required}"
                         self._log_strategy_reason_change(self.status.last_msg)
                         self.stop_event.wait(self.cfg.entry_check_seconds)
                         continue
-                    self.status.signal_count = self.signal_count
-                    self.last_signal_ts = now_ts
-                    logging.info("SIGNAL_COUNT=%s day=%s", self.signal_count, self.current_day)
-                    self.last_batch_id = intent.batch_id
                     if self.cfg.paper_mode:
                         open_same = [t for t in load_paper_trades() if t.status == "open" and t.symbol == self.cfg.symbol and t.timeframe == self.cfg.timeframe]
                         if len(open_same) >= int(self.cfg.max_open_paper_trades):
-                            logging.info("LIVE_DECISION decision=paper_open_position_blocked final_score=%s min_required=%s", final_score, min_required)
+                            decision = "paper_open_position_blocked"
+                            logging.info("LIVE_DECISION decision=%s final_score=%s min_required=%s", decision, final_score, min_required)
                             continue
                         entry = 0.0
                         tp1 = 0.0
@@ -1002,9 +1015,9 @@ class TradingEngine:
                             entry = float(tick.ask if intent.is_long else tick.bid)
                             r_value = abs(entry - float(intent.sl))
                             if r_value > 0:
-                                tp1 = entry + r_value if intent.is_long else entry - r_value
-                                tp2 = entry + (2 * r_value) if intent.is_long else entry - (2 * r_value)
-                                tp3 = entry + (3 * r_value) if intent.is_long else entry - (3 * r_value)
+                                tp1 = entry + (float(self.cfg.tp1_r_multiple) * r_value) if intent.is_long else entry - (float(self.cfg.tp1_r_multiple) * r_value)
+                                tp2 = entry + (float(self.cfg.tp2_r_multiple) * r_value) if intent.is_long else entry - (float(self.cfg.tp2_r_multiple) * r_value)
+                                tp3 = entry + (float(self.cfg.tp3_r_multiple) * r_value) if intent.is_long else entry - (float(self.cfg.tp3_r_multiple) * r_value)
 
                             trade = PaperTrade(
                                 batch_id=intent.batch_id,
@@ -1025,7 +1038,15 @@ class TradingEngine:
                                 run_start_time=self.run_started_at.isoformat(),
                                 build_version=self.build_version,
                             )
+                            trade.tp1_size_ratio = float(self.cfg.tp1_size_ratio)
+                            trade.tp2_size_ratio = float(self.cfg.tp2_size_ratio)
+                            trade.tp3_size_ratio = float(self.cfg.tp3_size_ratio)
                             upsert_paper_trade(trade)
+                            self.signal_count += 1
+                            self.status.signal_count = self.signal_count
+                            self.last_signal_ts = now_ts
+                            self.last_batch_id = intent.batch_id
+                            logging.info("SIGNAL_COUNT=%s day=%s", self.signal_count, self.current_day)
                             log_trade_open(trade=trade, path=self.cfg.ai_memory_path)
                             self._refresh_paper_stats()
 
@@ -1042,7 +1063,7 @@ class TradingEngine:
                             final_score,
                             context_score,
                             pattern_score,
-                            0,
+                            strategy_edge_score,
                         )
                         self.status.last_msg = "paper_signal_logged"
                         self._log_strategy_reason_change(self.status.last_msg)
@@ -1064,6 +1085,11 @@ class TradingEngine:
                         )
                         if res.ok:
                             self.state = st
+                            self.signal_count += 1
+                            self.status.signal_count = self.signal_count
+                            self.last_signal_ts = now_ts
+                            self.last_batch_id = intent.batch_id
+                            logging.info("SIGNAL_COUNT=%s day=%s", self.signal_count, self.current_day)
                             self.status.last_msg = f"Opened {intent.batch_id}"
                             self._log_strategy_reason_change(self.status.last_msg)
                         else:
