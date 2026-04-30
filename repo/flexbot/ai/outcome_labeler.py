@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 
-def label_outcomes(df: pd.DataFrame, horizon_bars: int = 20, risk_atr_mult: float = 1.0, spread_cost_points: int = 10, slippage_points: int = 5) -> pd.DataFrame:
+def label_outcomes(df: pd.DataFrame, horizon_bars: int = 20, risk_atr_mult: float = 1.0, spread_cost_points: int = 10, slippage_points: int = 5, point_size: float = 0.01) -> pd.DataFrame:
     if df.empty:
         return df.copy()
 
@@ -112,7 +112,8 @@ def label_outcomes(df: pd.DataFrame, horizon_bars: int = 20, risk_atr_mult: floa
         is_short = side == "short"
         selected_exit = short_exit if is_short else long_exit
         selected_r = short_r if is_short else long_r
-        cost_r = (spread_cost_points + slippage_points) / max(r, 1e-6)
+        cost_price = (spread_cost_points + slippage_points) * float(point_size)
+        cost_r = cost_price / max(r, 1e-6)
         selected_r = selected_r - cost_r
         selected_bars = short_bars if is_short else long_bars
         selected_up_r = (entry - window_low) / r if is_short else up_r

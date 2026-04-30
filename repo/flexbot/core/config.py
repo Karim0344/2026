@@ -61,6 +61,9 @@ class BotConfig:
     strategy_edge_weight: float = 1.0
     learning_spread_cost_points: int = 10
     learning_slippage_points: int = 5
+    learning_point_size: float = 0.01
+    block_side_inconsistent_features: bool = True
+    learning_pipeline_mode: str = "startup"  # startup/manual/background
 
     store_history_path: str = "data/history"
     store_learning_path: str = "data/learned"
