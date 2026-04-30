@@ -28,6 +28,7 @@ from flexbot.ai.regime import detect_regime
 from flexbot.ai.selector import selector_adjustment
 from flexbot.ai.context_scorer import ContextScorer
 from flexbot.ai.pattern_scorer import PatternScorer
+from flexbot.ai.strategy_edge_scorer import StrategyEdgeScorer
 from flexbot.ai.learning_pipeline import LearningPipeline
 from flexbot.reporting.run_summary import save_run_summary
 
@@ -122,6 +123,11 @@ class TradingEngine:
             weight=self.cfg.pattern_score_weight,
         )
         self.learning_pipeline = LearningPipeline(cfg=self.cfg)
+        self.strategy_edge_scorer = StrategyEdgeScorer(
+            store_learning_path=self.cfg.store_learning_path,
+            weight=self.cfg.strategy_edge_weight,
+        )
+        self.last_signal_ts: float = 0.0
 
     def start(self):
         mt5_initialize_started = False
@@ -280,6 +286,7 @@ class TradingEngine:
                 )
             self.context_scorer.refresh()
             self.pattern_scorer.refresh()
+            self.strategy_edge_scorer.refresh()
             logging.info(
                 "LEARNING_TABLES_REFRESHED path=%s", self.cfg.store_learning_path
             )
@@ -492,7 +499,7 @@ class TradingEngine:
                     continue
                 now_utc = client.broker_datetime_utc(self.cfg.symbol)
                 hour = now_utc.hour
-                if hour < self.cfg.session_start_hour or hour > self.cfg.session_end_hour:
+                if (not self.cfg.disable_session_filter) and (hour < self.cfg.session_start_hour or hour > self.cfg.session_end_hour):
                     self.session_block_count += 1
                     self.status.session_block_count = self.session_block_count
                     self.status.loop_state = "session_blocked"
@@ -752,6 +759,13 @@ class TradingEngine:
                     )
 
                 if intent.valid and intent.batch_id != self.last_batch_id:
+                    now_ts = time.time()
+                    min_gap_s = max(0, int(self.cfg.min_minutes_between_signals)) * 60
+                    if self.last_signal_ts > 0 and (now_ts - self.last_signal_ts) < min_gap_s:
+                        self.status.last_msg = "skip_trade_spacing"
+                        self._log_strategy_reason_change(self.status.last_msg)
+                        self.stop_event.wait(self.cfg.entry_check_seconds)
+                        continue
                     spread_points = 0
                     try:
                         spread_points = int(
@@ -849,6 +863,13 @@ class TradingEngine:
                             lookup=features,
                             min_samples=self.cfg.min_samples_pattern,
                         )
+                    strategy_edge_score = 0
+                    strategy_edge_reason = "strategy_edge_disabled"
+                    if self.cfg.enable_strategy_edge_table:
+                        strategy_edge_score, strategy_edge_reason = self.strategy_edge_scorer.score(
+                            lookup=features,
+                            min_samples=self.cfg.min_samples_context,
+                        )
 
                     spread_penalty = 0 if spread_points < self.cfg.max_spread_points else 8
                     bad_session_penalty = 3 if features.get("session_name") in ("Asia",) else 0
@@ -859,6 +880,7 @@ class TradingEngine:
                             setup_score
                             + context_score
                             + pattern_score
+                            + strategy_edge_score
                             + selector_bonus
                             - spread_penalty
                             - bad_session_penalty,
@@ -931,20 +953,21 @@ class TradingEngine:
                         setup_score,
                         context_score,
                         pattern_score,
-                        0,
+                        strategy_edge_score,
                         selector_bonus,
                         final_score,
                         decision,
                         reject_reason,
                     )
                     logging.info(
-                        "LIVE_DECISION regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s selector_bonus=%s spread_penalty=%s bad_session_penalty=%s final_score=%s decision=%s context_reason=%s pattern_reason=%s",
+                        "LIVE_DECISION regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s spread_penalty=%s bad_session_penalty=%s final_score=%s decision=%s context_reason=%s pattern_reason=%s strategy_edge_reason=%s",
                         regime,
                         intent.reason,
                         "long" if intent.is_long else "short",
                         setup_score,
                         context_score,
                         pattern_score,
+                        strategy_edge_score,
                         selector_bonus,
                         spread_penalty,
                         bad_session_penalty,
@@ -952,6 +975,7 @@ class TradingEngine:
                         "paper_signal" if self.cfg.paper_mode else "live_signal",
                         context_reason,
                         pattern_reason,
+                        strategy_edge_reason,
                     )
                     if decision != "skip_low_final_score":
                         self.signal_count += 1
@@ -961,6 +985,7 @@ class TradingEngine:
                         self.stop_event.wait(self.cfg.entry_check_seconds)
                         continue
                     self.status.signal_count = self.signal_count
+                    self.last_signal_ts = now_ts
                     logging.info("SIGNAL_COUNT=%s day=%s", self.signal_count, self.current_day)
                     self.last_batch_id = intent.batch_id
                     if self.cfg.paper_mode:

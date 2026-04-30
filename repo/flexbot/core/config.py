@@ -118,6 +118,7 @@ class BotConfig:
     # Session
     session_start_hour: int = 7
     session_end_hour: int = 20
+    disable_session_filter: bool = False
 
     def apply_overrides(self, raw: dict) -> None:
         for key in self.__dataclass_fields__:
