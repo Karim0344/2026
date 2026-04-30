@@ -2,16 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
-
-
-def _session_from_hour(hour: int) -> str:
-    if hour < 7:
-        return "Asia"
-    if hour < 13:
-        return "London"
-    if hour < 17:
-        return "London/NY_overlap"
-    return "New_York"
+from flexbot.ai.session_utils import normalize_session_name
 
 
 def build_feature_snapshot(
@@ -45,7 +36,7 @@ def build_feature_snapshot(
 
     resolved_symbol = str(debug.get("symbol", "") or symbol)
     resolved_timeframe = str(debug.get("timeframe", "") or timeframe)
-    session_name = str(debug.get("session_name", "") or debug.get("session", "") or _session_from_hour(dt.hour))
+    session_name = normalize_session_name(debug.get("session_name", "") or debug.get("session", "") or dt.hour)
 
     body_size = float(debug.get("body_size", debug.get("body", 0.0)) or 0.0)
     wick_ratio = float(debug.get("wick_ratio", 0.0) or 0.0)
@@ -112,7 +103,7 @@ def build_feature_snapshot(
         "rising_lows": bool(debug.get("rising_lows", False)),
         "falling_highs": bool(debug.get("falling_highs", False)),
         "mid_range_flag": bool(debug.get("mid_range_candle", debug.get("in_middle", False))),
-        "session": str(debug.get("session", "") or session_name),
+        "session": normalize_session_name(debug.get("session", "") or session_name),
         "spread_points": int(spread_points),
         "max_spread_points": int(max_spread_points),
     }

@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 
 from flexbot.mt5 import client
+from flexbot.ai.session_utils import normalize_session_name
 
 
 @dataclass
@@ -58,7 +59,7 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
 
     bar_time = int(c0["time"])
     session_hour = client.broker_datetime_utc(symbol).hour
-    session = "London" if 7 <= session_hour < 13 else ("London/NY_overlap" if 13 <= session_hour < 17 else ("New_York" if session_hour >= 17 else "Asia"))
+    session = normalize_session_name(session_hour)
 
     close = float(c0["close"])
     open_ = float(c0["open"])

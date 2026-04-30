@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from flexbot.ai.session_utils import normalize_session_name
 
 
 def build_features(df: pd.DataFrame, strategy_name: str, symbol: str, timeframe: str) -> pd.DataFrame:
@@ -16,7 +17,7 @@ def build_features(df: pd.DataFrame, strategy_name: str, symbol: str, timeframe:
     out["minute_bucket"] = (out["time"].dt.minute // 5) * 5
     out["week_number"] = out["time"].dt.isocalendar().week.astype(int)
     out["month"] = out["time"].dt.month
-    out["session_name"] = out["hour"].map(_session_name)
+    out["session_name"] = out["hour"].map(normalize_session_name)
     out["is_monday_open"] = (out["weekday"] == 0) & (out["hour"] < 2)
     out["is_friday_close"] = (out["weekday"] == 4) & (out["hour"] >= 20)
 
@@ -89,12 +90,3 @@ def _atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     return tr.rolling(period, min_periods=max(2, period // 2)).mean().fillna(0)
 
-
-def _session_name(hour: int) -> str:
-    if hour < 7:
-        return "Asia"
-    if hour < 13:
-        return "London"
-    if hour < 17:
-        return "London/NY_overlap"
-    return "New_York"

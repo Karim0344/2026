@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from flexbot.mt5 import client
+from flexbot.ai.session_utils import normalize_session_name
 
 
 @dataclass
@@ -104,7 +105,7 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
     lower_wick = max(min(open_, close) - low, 0.0)
     wick_ratio = (upper_wick + lower_wick) / candle_range
 
-    session = "london_ny" if 7 <= client.broker_datetime_utc(symbol).hour <= 20 else "off_session"
+    session = normalize_session_name(client.broker_datetime_utc(symbol).hour)
 
     trend_score_long = 0
     trend_score_short = 0
@@ -137,6 +138,13 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
         trend_score_long += 20
     if breakout_short:
         trend_score_short += 20
+
+    trend_require_htf = bool(getattr(cfg, "trend_require_htf", False))
+    trend_no_htf_penalty = int(getattr(cfg, "trend_no_htf_penalty", 20))
+    if trend_long and not htf_long:
+        trend_score_long -= trend_no_htf_penalty
+    if trend_short and not htf_short:
+        trend_score_short -= trend_no_htf_penalty
 
     min_score = int(getattr(cfg, "trend_min_score", 65))
     paper_mode = bool(getattr(cfg, "paper_mode", False))
@@ -193,6 +201,9 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
 
     long_ok = trend_long and pullback_long and bullish and trend_score_long >= effective_min_score
     short_ok = allow_short and trend_short and pullback_short and bearish and trend_score_short >= short_min_score
+    if trend_require_htf:
+        long_ok = long_ok and htf_long
+        short_ok = short_ok and htf_short
 
     near_long_ok = (
         paper_mode
