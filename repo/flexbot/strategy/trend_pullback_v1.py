@@ -6,6 +6,7 @@ import pandas as pd
 
 from flexbot.mt5 import client
 from flexbot.ai.session_utils import normalize_session_name
+from flexbot.strategy.trend_scoring import compute_trend_decision
 
 
 @dataclass
@@ -199,8 +200,9 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
         "session": session,
     }
 
-    long_ok = trend_long and pullback_long and bullish and trend_score_long >= effective_min_score
-    short_ok = allow_short and trend_short and pullback_short and bearish and trend_score_short >= short_min_score
+    trend_decision = compute_trend_decision(debug, cfg)
+    long_ok = bool(trend_decision["long_valid"])
+    short_ok = bool(trend_decision["short_valid"])
     if trend_require_htf:
         long_ok = long_ok and htf_long
         short_ok = short_ok and htf_short

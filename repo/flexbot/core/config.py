@@ -154,3 +154,17 @@ class BotConfig:
 
     def to_dict(self) -> dict:
         return {key: getattr(self, key) for key in self.__dataclass_fields__}
+
+
+from pathlib import Path
+import json
+
+def load_bot_config(path: str = "config.json") -> BotConfig:
+    cfg = BotConfig()
+    p = Path(path)
+    if p.exists():
+        with p.open("r", encoding="utf-8") as f:
+            raw = json.load(f)
+        if isinstance(raw, dict):
+            cfg.apply_overrides(raw)
+    return cfg

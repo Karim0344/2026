@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+from flexbot.strategy.trend_scoring import compute_trend_decision
 
 
 def _strategy_from_row(row: pd.Series) -> str | None:
@@ -18,7 +19,8 @@ def _strategy_from_row(row: pd.Series) -> str | None:
             return "RANGE_SHORT"
         return None
 
-    effective_min = float(row.get("effective_min_score", trend_min))
+    decision = compute_trend_decision(row.to_dict(), type("Cfg", (), row.to_dict())())
+    effective_min = float(row.get("effective_min_score", decision["effective_min_score"]))
     require_htf = bool(row.get("trend_require_htf", False))
     htf_ok_long = bool(row.get("htf_ok_long", True))
     htf_ok_short = bool(row.get("htf_ok_short", True))

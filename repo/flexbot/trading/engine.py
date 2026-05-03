@@ -116,10 +116,12 @@ class TradingEngine:
         self.window_reject_reasons: Counter[str] = Counter()
         self.context_scorer = ContextScorer(
             store_learning_path=self.cfg.store_learning_path,
+            cfg=self.cfg,
             weight=self.cfg.context_score_weight,
         )
         self.pattern_scorer = PatternScorer(
             store_learning_path=self.cfg.store_learning_path,
+            cfg=self.cfg,
             weight=self.cfg.pattern_score_weight,
         )
         self.learning_pipeline = LearningPipeline(cfg=self.cfg)
@@ -127,6 +129,7 @@ class TradingEngine:
         self._learning_thread: threading.Thread | None = None
         self.strategy_edge_scorer = StrategyEdgeScorer(
             store_learning_path=self.cfg.store_learning_path,
+            cfg=self.cfg,
             weight=self.cfg.strategy_edge_weight,
         )
         self.last_signal_ts: float = 0.0
@@ -338,11 +341,15 @@ class TradingEngine:
         if self.cfg.enable_strategy_edge_table:
             strategy_edge_score, _ = self.strategy_edge_scorer.score(lookup=features, min_samples=self.cfg.strategy_edge_min_samples)
         selector_bonus = 0
-        raw_score = setup_score + context_score + pattern_score + strategy_edge_score + selector_bonus
+        spread_penalty = 0 if spread_points < self.cfg.max_spread_points else 8
+        bad_session_penalty = 3 if features.get("session_name") in ("Asia",) else 0
+        side_inconsistent = bool(getattr(self.cfg, "block_side_inconsistent_features", True)) and features.get("intended_side") in ("long", "short") and features.get("intended_side") != side
+        side_penalty = 30 if side_inconsistent else 0
+        raw_score = setup_score + context_score + pattern_score + strategy_edge_score + selector_bonus - spread_penalty - bad_session_penalty - side_penalty
         final_score = max(0, min(100, int(round(raw_score))))
         logging.info(
-            "CANDIDATE_EVAL stage=%s symbol=%s tf=%s regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s raw_score=%s final_score=%s decision=%s reject_reason=%s",
-            ("pre_filter" if str(decision).startswith("skip_") else "final_decision"), self.cfg.symbol, self.cfg.timeframe, regime, intent.reason, side, setup_score, context_score, pattern_score, strategy_edge_score, selector_bonus, raw_score, final_score, decision, reject_reason,
+            "CANDIDATE_EVAL stage=%s symbol=%s tf=%s regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s spread_penalty=%s bad_session_penalty=%s side_penalty=%s raw_score=%s final_score=%s decision=%s reject_reason=%s",
+            ("pre_filter" if str(decision).startswith("skip_") else "final_decision"), self.cfg.symbol, self.cfg.timeframe, regime, intent.reason, side, setup_score, context_score, pattern_score, strategy_edge_score, selector_bonus, spread_penalty, bad_session_penalty, side_penalty, raw_score, final_score, decision, reject_reason,
         )
 
     def _spread_ok(self) -> bool:
@@ -621,7 +628,7 @@ class TradingEngine:
                             path=self.cfg.ai_memory_path,
                         )
                         logging.info(
-                            "PAPER_CLOSE batch_id=%s final_status=%s exit_reason=%s rr_realized=%.2f mfe_r=%.2f mae_r=%.2f",
+                            "PAPER_CLOSE batch_id=%s final_status=%s exit_reason=%s result_r=%.2f mfe_r=%.2f mae_r=%.2f",
                             trade.batch_id,
                             trade.status,
                             trade.exit_reason,

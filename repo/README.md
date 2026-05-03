@@ -46,3 +46,11 @@ Paper test checklist
 - Houd `paper_mode=true` voor de eerste validatie.
 - Zet `paper_mode` pas uit na stabiele paper testing.
 
+
+
+Manual learning mode workflow
+1) Start MT5 and ensure your target symbol is visible in Market Watch.
+2) Run `run_learning_pipeline.bat`.
+3) Verify logs contain: `HISTORY_REFRESHED`, `FEATURES_BUILT`, `OUTCOMES_LABELED`, `CONTEXT_TABLE_BUILT`, `PATTERN_TABLE_BUILT`, `STRATEGY_EDGE_TABLE_BUILT`, `LEARNING_SUMMARY_SAVED`.
+4) Start the bot with `start_bot.bat`.
+5) If `config.json` changes, run the learning pipeline again before trading.

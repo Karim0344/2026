@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from flexbot.ai.session_utils import normalize_session_name
+from flexbot.strategy.range_features import compute_range_features
 
 
 def build_features(df: pd.DataFrame, strategy_name: str, symbol: str, timeframe: str, cfg=None) -> pd.DataFrame:
@@ -101,22 +102,7 @@ def build_features(df: pd.DataFrame, strategy_name: str, symbol: str, timeframe:
     out["trend_min_score"] = int(getattr(cfg, "trend_min_score", 60)) if cfg is not None else 60
     out["trend_short_extra_score"] = int(getattr(cfg, "trend_short_extra_score", 10)) if cfg is not None else 10
     out["trend_allow_short"] = bool(getattr(cfg, "trend_allow_short", False)) if cfg is not None else False
-    out["near_top"] = out["close_position_within_range"] >= 0.75
-    out["near_bottom"] = out["close_position_within_range"] <= 0.25
-    out["fake_break_top"] = out["high"] > (range_high + atr * break_buffer_mult)
-    out["fake_break_bottom"] = out["low"] < (range_low - atr * break_buffer_mult)
-    out["reclaim_top"] = out["close"] < range_high
-    out["reclaim_bottom"] = out["close"] > range_low
-    ratio_series = out["range_width_atr_ratio"].replace([np.inf, -np.inf], np.nan)
-    ratio_tail = ratio_series.rolling(max(30, ratio_window), min_periods=30)
-    dyn_max = ratio_tail.quantile(min(max(max_atr_ratio_percentile, 0.5), 0.995))
-    effective_max = np.minimum(max_atr_ratio, np.maximum(min_atr_ratio, dyn_max.fillna(max_atr_ratio)))
-    out["range_width_valid"] = (out["range_width_atr_ratio"] >= min_atr_ratio) & (out["range_width_atr_ratio"] <= effective_max)
-    top_touch_count = out["touches_top"].rolling(range_lookback, min_periods=1).sum()
-    bottom_touch_count = out["touches_bottom"].rolling(range_lookback, min_periods=1).sum()
-    out["range_confirmed"] = out["range_width_valid"] & (top_touch_count >= required_touches) & (bottom_touch_count >= required_touches)
-    out["wick_body_ok_top"] = (out["upper_wick"] / out["body_size"].replace(0, np.nan)) >= wick_body_min
-    out["wick_body_ok_bottom"] = (out["lower_wick"] / out["body_size"].replace(0, np.nan)) >= wick_body_min
+    out = compute_range_features(out, cfg if cfg is not None else type("Cfg", (), {})())
 
     out["strategy_name"] = strategy_name
     out["symbol"] = symbol
