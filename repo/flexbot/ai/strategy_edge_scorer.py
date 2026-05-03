@@ -49,5 +49,7 @@ class StrategyEdgeScorer:
             raw = max(-20.0, min(20.0, avg_r * 25.0))
             score = int(round(raw * self.weight))
             logging.info("STRATEGY_EDGE_SCORE method=backoff_level_%s count=%s avg_r=%.4f score=%s", idx, count, avg_r, score)
+            if score < 0:
+                logging.info("STRATEGY_EDGE_SCORE_NEGATIVE count=%s avg_r=%.4f score=%s reason=strategy_penalty", count, avg_r, score)
             return score, f"strategy_backoff_match_{idx}"
         return 0, "strategy_no_match"
