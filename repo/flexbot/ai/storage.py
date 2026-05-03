@@ -31,24 +31,30 @@ def read_table(preferred_path: Path) -> pd.DataFrame:
 
 def write_table(df: pd.DataFrame, preferred_path: Path) -> Path:
     preferred_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = preferred_path.with_suffix(preferred_path.suffix + ".tmp")
     if preferred_path.suffix == ".parquet":
         try:
-            df.to_parquet(preferred_path, index=False)
+            df.to_parquet(tmp_path, index=False)
+            tmp_path.replace(preferred_path)
             return preferred_path
         except Exception as exc:
             csv_fallback = preferred_path.with_suffix(".csv")
+            csv_tmp = csv_fallback.with_suffix(csv_fallback.suffix + ".tmp")
             logging.warning(
                 "PARQUET_WRITE_FAILED path=%s err=%s fallback=%s",
                 preferred_path,
                 exc,
                 csv_fallback,
             )
-            df.to_csv(csv_fallback, index=False)
+            df.to_csv(csv_tmp, index=False)
+            csv_tmp.replace(csv_fallback)
             return csv_fallback
     if preferred_path.suffix == ".jsonl":
-        df.to_json(preferred_path, orient="records", lines=True)
+        df.to_json(tmp_path, orient="records", lines=True)
+        tmp_path.replace(preferred_path)
         return preferred_path
-    df.to_csv(preferred_path, index=False)
+    df.to_csv(tmp_path, index=False)
+    tmp_path.replace(preferred_path)
     return preferred_path
 
 

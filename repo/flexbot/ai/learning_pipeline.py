@@ -139,7 +139,10 @@ class LearningPipeline:
         if not strategy_table.empty:
             strategy_table["learning_version"] = learning_version
         strategy_path = Path(self.cfg.store_learning_path) / "strategy_edge_table.csv"
-        strategy_table.to_csv(strategy_path, index=False)
+        strategy_path.parent.mkdir(parents=True, exist_ok=True)
+        strategy_tmp_path = strategy_path.with_suffix(".csv.tmp")
+        strategy_table.to_csv(strategy_tmp_path, index=False)
+        strategy_tmp_path.replace(strategy_path)
         strategy_rows = len(strategy_table)
         logging.info("STRATEGY_EDGE_TABLE_BUILT rows=%s path=%s", strategy_rows, strategy_path)
         if strategy_rows == 0:

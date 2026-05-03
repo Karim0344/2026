@@ -956,17 +956,28 @@ class TradingEngine:
                     spread_penalty = 0 if spread_points < self.cfg.max_spread_points else 8
                     bad_session_penalty = 3 if features.get("session_name") in ("Asia",) else 0
                     side_penalty = 30 if side_inconsistent else 0
+                    no_data_penalty = 0
+                    if context_reason == "no_data":
+                        no_data_penalty += 5
+                    if pattern_reason == "no_data":
+                        no_data_penalty += 5
+                    if strategy_edge_reason == "no_data":
+                        no_data_penalty += 5
                     context_score = max(-15, min(15, context_score))
                     pattern_score = max(-15, min(15, pattern_score))
                     strategy_edge_score = max(-20, min(20, strategy_edge_score))
+                    weighted_setup = setup_score * float(getattr(self.cfg, "weight_setup", 1.0))
+                    weighted_context = context_score * float(getattr(self.cfg, "weight_context", 0.7))
+                    weighted_pattern = pattern_score * float(getattr(self.cfg, "weight_pattern", 0.7))
+                    weighted_strategy = strategy_edge_score * float(getattr(self.cfg, "weight_strategy", 0.8))
                     raw_score_pre = (
-                        setup_score
-                        + context_score
-                        + pattern_score
-                        + strategy_edge_score
+                        weighted_setup
+                        + weighted_context
+                        + weighted_pattern
+                        + weighted_strategy
                         + selector_bonus
                     )
-                    raw_score_final = raw_score_pre - spread_penalty - bad_session_penalty - side_penalty
+                    raw_score_final = raw_score_pre - spread_penalty - bad_session_penalty - side_penalty - no_data_penalty
                     final_score = max(0, min(100, int(round(raw_score_final))))
                     confidence = int(final_score)
 
@@ -1027,8 +1038,11 @@ class TradingEngine:
                     if final_score < min_required:
                         decision = "skip_low_final_score"
                         reject_reason = "low_final_score"
+                    if strategy_edge_score < -10:
+                        decision = "blocked_negative_edge"
+                        reject_reason = "blocked_negative_edge"
                     logging.info(
-                        "LIVE_DECISION regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s spread_penalty=%s bad_session_penalty=%s side_penalty=%s raw_score_pre=%s raw_score_final=%s final_score=%s decision=%s context_reason=%s pattern_reason=%s strategy_edge_reason=%s",
+                        "LIVE_DECISION regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s spread_penalty=%s bad_session_penalty=%s side_penalty=%s no_data_penalty=%s raw_score_pre=%s raw_score_final=%s final_score=%s decision=%s context_reason=%s pattern_reason=%s strategy_edge_reason=%s",
                         regime,
                         intent.reason,
                         "long" if intent.is_long else "short",
@@ -1040,6 +1054,7 @@ class TradingEngine:
                         spread_penalty,
                         bad_session_penalty,
                         side_penalty,
+                        no_data_penalty,
                         raw_score_pre,
                         raw_score_final,
                         final_score,
@@ -1049,7 +1064,7 @@ class TradingEngine:
                         strategy_edge_reason,
                     )
                     self._log_candidate_eval(intent=intent, regime=regime, closed_bar_time=closed_bar_time, decision=decision, reject_reason=reject_reason)
-                    if decision == "skip_low_final_score":
+                    if decision in ("skip_low_final_score", "blocked_negative_edge"):
                         self.status.last_msg = f"skip_low_final_score:{final_score}<{min_required}"
                         self._log_strategy_reason_change(self.status.last_msg)
                         self.stop_event.wait(self.cfg.entry_check_seconds)
