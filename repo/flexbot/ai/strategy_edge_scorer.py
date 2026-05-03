@@ -68,8 +68,8 @@ class StrategyEdgeScorer:
             raw = max(-20.0, min(20.0, avg_r * 25.0))
             confidence = min(1.0, count / max(int(min_samples) * 3, 1))
             score = int(round(raw * confidence * self.weight))
-            if count < int(min_samples) * 2:
-                score = int(round(score * 0.5))
+            if count < int(min_samples) * 3:
+                score = int(round(score * 0.3))
             logging.info("STRATEGY_EDGE_SCORE method=backoff_level_%s count=%s confidence=%.2f avg_r=%.4f score=%s", idx, count, confidence, avg_r, score)
             if score < 0:
                 logging.info("STRATEGY_EDGE_SCORE_NEGATIVE count=%s avg_r=%.4f score=%s reason=strategy_penalty", count, avg_r, score)

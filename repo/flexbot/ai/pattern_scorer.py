@@ -82,8 +82,8 @@ class PatternScorer:
         raw = max(-20.0, min(20.0, avg_r * 25.0 * ms))
         confidence = min(1.0, count / max(int(min_samples) * 3, 1))
         score = int(round(raw * confidence * self.weight))
-        if count < int(min_samples) * 2:
-            score = int(round(score * 0.5))
+        if count < int(min_samples) * 3:
+            score = int(round(score * 0.3))
         logging.info("PATTERN_SCORE method=fuzzy match_score=%.2f count=%s confidence=%.2f avg_r=%.4f score=%s", ms, count, confidence, avg_r, score)
         if score < 0:
             logging.info("PATTERN_SCORE_NEGATIVE match_score=%.2f avg_r=%.4f score=%s reason=pattern_penalty", ms, avg_r, score)

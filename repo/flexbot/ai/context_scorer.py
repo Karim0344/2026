@@ -68,8 +68,8 @@ class ContextScorer:
             raw = max(-15.0, min(15.0, avg_r * 20.0))
             confidence = min(1.0, count / max(int(min_samples) * 3, 1))
             score = int(round(raw * confidence * self.weight))
-            if count < int(min_samples) * 2:
-                score = int(round(score * 0.5))
+            if count < int(min_samples) * 3:
+                score = int(round(score * 0.3))
             logging.info("CONTEXT_SCORE method=backoff_level_%s count=%s confidence=%.2f avg_r=%.4f score=%s", idx, count, confidence, avg_r, score)
             if score < 0:
                 logging.info("CONTEXT_SCORE_NEGATIVE count=%s avg_r=%.4f score=%s reason=context_penalty", count, avg_r, score)
