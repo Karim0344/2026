@@ -1,4 +1,5 @@
 import logging
+import math
 import threading
 import time
 from dataclasses import dataclass
@@ -136,6 +137,10 @@ class TradingEngine:
         self.range_no_signal_count: int = 0
         self.recent_performance: dict[str, list[float]] = {}
         self.recent_loss_streak: int = 0
+        self.last_loss_ts: float = 0.0
+
+    def _soft_score(self, raw_score: float) -> int:
+        return int(round(100.0 / (1.0 + math.exp(-float(raw_score) / 20.0))))
 
     def start(self):
         mt5_initialize_started = False
@@ -645,6 +650,7 @@ class TradingEngine:
                             del runs[0]
                         if rr_realized < 0:
                             self.recent_loss_streak += 1
+                            self.last_loss_ts = time.time()
                         elif rr_realized > 0:
                             self.recent_loss_streak = 0
                         log_trade_close(
@@ -732,7 +738,7 @@ class TradingEngine:
                         self.range_no_signal_count += 1
                     else:
                         self.range_no_signal_count = 0
-                    if self.range_no_signal_count > 20:
+                    if self.range_no_signal_count > 15:
                         regime = "dead"
                         self.range_no_signal_count = 0
                     is_long = range_intent.direction == "long"
@@ -978,15 +984,22 @@ class TradingEngine:
                     side_penalty = 30 if side_inconsistent else 0
                     no_data_penalty = 0
                     if context_reason == "no_data":
-                        no_data_penalty += 5
+                        no_data_penalty += 10
                     if pattern_reason == "no_data":
-                        no_data_penalty += 5
+                        no_data_penalty += 10
                     if strategy_edge_reason == "no_data":
-                        no_data_penalty += 5
+                        no_data_penalty += 10
+                    if "version_mismatch" in (context_reason, pattern_reason, strategy_edge_reason):
+                        self._refresh_learning_tables_if_needed(force=True)
+                        self.status.last_msg = "learning_version_mismatch_rebuild"
+                        self._log_strategy_reason_change(self.status.last_msg)
+                        self.stop_event.wait(self.cfg.entry_check_seconds)
+                        continue
                     context_score = max(-15, min(15, context_score))
                     pattern_score = max(-15, min(15, pattern_score))
                     strategy_edge_score = max(-20, min(20, strategy_edge_score))
-                    weighted_setup = setup_score * float(getattr(self.cfg, "weight_setup", 1.0))
+                    setup_score_norm = setup_score - 50
+                    weighted_setup = setup_score_norm * float(getattr(self.cfg, "weight_setup", 1.0))
                     weighted_context = context_score * float(getattr(self.cfg, "weight_context", 0.6))
                     weighted_pattern = pattern_score * float(getattr(self.cfg, "weight_pattern", 0.6))
                     weighted_strategy = strategy_edge_score * float(getattr(self.cfg, "weight_strategy", 0.8))
@@ -1004,7 +1017,7 @@ class TradingEngine:
                         + selector_bonus
                     )
                     raw_score_final = raw_score_pre - spread_penalty - bad_session_penalty - side_penalty - no_data_penalty - runtime_penalty
-                    final_score = max(0, min(100, int(round(raw_score_final))))
+                    final_score = self._soft_score(raw_score_final)
                     confidence = int(final_score)
 
                     logging.info(
@@ -1064,9 +1077,23 @@ class TradingEngine:
                     if final_score < min_required:
                         decision = "skip_low_final_score"
                         reject_reason = "low_final_score"
-                    if strategy_edge_score < -10:
-                        decision = "blocked_negative_edge"
-                        reject_reason = "blocked_negative_edge"
+                    if strategy_edge_score <= -12:
+                        decision = "blocked_strong_negative_edge"
+                        reject_reason = "blocked_strong_negative_edge"
+                    if self.last_loss_ts > 0:
+                        cooldown_s = max(0, int(getattr(self.cfg, "cooldown_minutes_after_loss", 10))) * 60
+                        if (time.time() - self.last_loss_ts) < cooldown_s:
+                            decision = "cooldown_after_loss"
+                            reject_reason = "cooldown_after_loss"
+                    session_trades = [t for t in load_paper_trades() if t.run_id == self.run_id]
+                    hour_cutoff = time.time() - 3600
+                    trades_last_hour = sum(1 for t in session_trades if int(getattr(t, "created_bar_time", 0)) >= hour_cutoff)
+                    if trades_last_hour >= int(getattr(self.cfg, "max_trades_per_hour", 6)):
+                        decision = "max_trades_per_hour"
+                        reject_reason = "max_trades_per_hour"
+                    if len(session_trades) >= int(getattr(self.cfg, "max_trades_per_session", 20)):
+                        decision = "max_trades_per_session"
+                        reject_reason = "max_trades_per_session"
                     logging.info(
                         "LIVE_DECISION regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s spread_penalty=%s bad_session_penalty=%s side_penalty=%s no_data_penalty=%s raw_score_pre=%s raw_score_final=%s final_score=%s decision=%s context_reason=%s pattern_reason=%s strategy_edge_reason=%s",
                         regime,
@@ -1090,7 +1117,7 @@ class TradingEngine:
                         strategy_edge_reason,
                     )
                     self._log_candidate_eval(intent=intent, regime=regime, closed_bar_time=closed_bar_time, decision=decision, reject_reason=reject_reason)
-                    if decision in ("skip_low_final_score", "blocked_negative_edge"):
+                    if decision in ("skip_low_final_score", "blocked_strong_negative_edge", "cooldown_after_loss", "max_trades_per_hour", "max_trades_per_session"):
                         self.status.last_msg = f"skip_low_final_score:{final_score}<{min_required}"
                         self._log_strategy_reason_change(self.status.last_msg)
                         self.stop_event.wait(self.cfg.entry_check_seconds)
@@ -1112,11 +1139,20 @@ class TradingEngine:
                             logging.info("LIVE_DECISION decision=tick_missing final_score=%s min_required=%s", final_score, min_required)
                             continue
                         entry = float(tick.ask if intent.is_long else tick.bid)
+                        spread_cost = (float(getattr(self.cfg, "learning_spread_cost_points", 0)) * float(getattr(self.cfg, "learning_point_size", 0.01))) / 2.0
+                        if intent.is_long:
+                            entry += spread_cost
+                        else:
+                            entry -= spread_cost
                         r_value = abs(entry - float(intent.sl))
                         if r_value > 0:
                             tp1 = entry + (float(self.cfg.tp1_r_multiple) * r_value) if intent.is_long else entry - (float(self.cfg.tp1_r_multiple) * r_value)
                             tp2 = entry + (float(self.cfg.tp2_r_multiple) * r_value) if intent.is_long else entry - (float(self.cfg.tp2_r_multiple) * r_value)
                             tp3 = entry + (float(self.cfg.tp3_r_multiple) * r_value) if intent.is_long else entry - (float(self.cfg.tp3_r_multiple) * r_value)
+                        adj_sl = float(intent.sl) + spread_cost if intent.is_long else float(intent.sl) - spread_cost
+                        tp1 = tp1 - spread_cost if intent.is_long else tp1 + spread_cost
+                        tp2 = tp2 - spread_cost if intent.is_long else tp2 + spread_cost
+                        tp3 = tp3 - spread_cost if intent.is_long else tp3 + spread_cost
 
                         trade = PaperTrade(
                                 batch_id=intent.batch_id,
@@ -1124,7 +1160,7 @@ class TradingEngine:
                                 timeframe=self.cfg.timeframe,
                                 is_long=intent.is_long,
                                 entry=entry,
-                                sl=float(intent.sl),
+                                sl=float(adj_sl),
                                 tp1=float(tp1),
                                 tp2=float(tp2),
                                 tp3=float(tp3),

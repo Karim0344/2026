@@ -55,6 +55,9 @@ class BotConfig:
     trend_require_htf: bool = False
     trend_no_htf_penalty: int = 20
     min_minutes_between_signals: int = 15
+    cooldown_minutes_after_loss: int = 10
+    max_trades_per_hour: int = 6
+    max_trades_per_session: int = 20
     max_open_paper_trades: int = 1
     duplicate_entry_atr_tolerance: float = 0.5
     enable_strategy_edge_table: bool = True
