@@ -5,12 +5,14 @@ from pathlib import Path
 import pandas as pd
 from flexbot.ai.storage import read_table, resolve_existing_path
 from flexbot.ai.session_utils import normalize_session_name
+from flexbot.ai.learning_version import build_learning_version
 
 
 class ContextScorer:
-    def __init__(self, store_learning_path: str, weight: float = 1.0):
+    def __init__(self, store_learning_path: str, cfg=None, weight: float = 1.0):
         self.path = Path(store_learning_path) / "context_edge_table.parquet"
         self.weight = float(weight)
+        self.cfg = cfg
         self._cache: pd.DataFrame | None = None
 
     def refresh(self) -> None:
@@ -22,8 +24,15 @@ class ContextScorer:
             self.refresh()
         if self._cache is None or self._cache.empty:
             return 0, "context_table_missing"
+        current_version = build_learning_version(self.cfg) if self.cfg is not None else ""
         if "learning_version" not in self._cache.columns:
-            logging.warning("LEARNING_VERSION_TODO table=context_edge_table status=missing_column")
+            logging.warning("LEARNING_VERSION_MISMATCH table=context_edge_table status=missing_column expected=%s", current_version)
+            return 0, "version_mismatch"
+        if current_version and not self._cache[self._cache["learning_version"] == current_version].empty:
+            self._cache = self._cache[self._cache["learning_version"] == current_version].copy()
+        elif current_version:
+            logging.warning("LEARNING_VERSION_MISMATCH table=context_edge_table expected=%s", current_version)
+            return 0, "version_mismatch"
 
         lookup = dict(lookup)
         lookup["session_name"] = normalize_session_name(lookup.get("session_name", ""))

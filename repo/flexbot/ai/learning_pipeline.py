@@ -14,6 +14,7 @@ from flexbot.ai.storage import write_table
 from flexbot.ai.historical_strategy_simulator import build_strategy_edge_table
 from flexbot.data.historical_data_recorder import HistoricalDataRecorder
 from flexbot.reporting.learning_summary import build_learning_summary, save_learning_summary
+from flexbot.ai.learning_version import build_learning_version
 
 
 @dataclass
@@ -114,10 +115,14 @@ class LearningPipeline:
         outcomes_path = self._save_learning_frame(outcomes_df, "learning_outcomes")
         logging.info("OUTCOMES_LABELED rows=%s path=%s", len(outcomes_df), outcomes_path)
 
+        learning_version = build_learning_version(self.cfg)
+
         context_table = build_context_edge_table(
             outcomes_df,
             min_samples=self.cfg.min_samples_context,
         )
+        if not context_table.empty:
+            context_table["learning_version"] = learning_version
         context_path = save_context_edge_table(context_table, self.cfg.store_learning_path)
         logging.info("CONTEXT_TABLE_BUILT rows=%s path=%s", len(context_table), context_path)
 
@@ -125,10 +130,14 @@ class LearningPipeline:
             outcomes_df,
             min_samples=self.cfg.min_samples_pattern,
         )
+        if not pattern_table.empty:
+            pattern_table["learning_version"] = learning_version
         pattern_path = save_pattern_edge_table(pattern_table, self.cfg.store_learning_path)
         logging.info("PATTERN_TABLE_BUILT rows=%s path=%s", len(pattern_table), pattern_path)
 
         strategy_table = build_strategy_edge_table(outcomes_df, min_samples=self.cfg.strategy_edge_min_samples)
+        if not strategy_table.empty:
+            strategy_table["learning_version"] = learning_version
         strategy_path = Path(self.cfg.store_learning_path) / "strategy_edge_table.csv"
         strategy_table.to_csv(strategy_path, index=False)
         strategy_rows = len(strategy_table)
@@ -137,6 +146,7 @@ class LearningPipeline:
             logging.warning("STRATEGY_EDGE_TABLE_EMPTY symbol=%s", symbol)
 
         summary = build_learning_summary(context_table=context_table, pattern_table=pattern_table, strategy_table=strategy_table)
+        summary["learning_version"] = learning_version
         summary_path = save_learning_summary(summary=summary, report_dir=self.cfg.store_reports_path)
         logging.info("LEARNING_SUMMARY_SAVED path=%s", summary_path)
         logging.info("LEARNING_PIPELINE_END symbol=%s status=ok", symbol)

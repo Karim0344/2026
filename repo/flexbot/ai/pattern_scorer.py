@@ -5,12 +5,14 @@ from pathlib import Path
 import pandas as pd
 from flexbot.ai.storage import read_table, resolve_existing_path
 from flexbot.ai.session_utils import normalize_session_name
+from flexbot.ai.learning_version import build_learning_version
 
 
 class PatternScorer:
-    def __init__(self, store_learning_path: str, weight: float = 1.0):
+    def __init__(self, store_learning_path: str, cfg=None, weight: float = 1.0):
         self.path = Path(store_learning_path) / "pattern_edge_table.parquet"
         self.weight = float(weight)
+        self.cfg = cfg
         self._cache: pd.DataFrame | None = None
 
     def refresh(self) -> None:
@@ -22,12 +24,29 @@ class PatternScorer:
             self.refresh()
         if self._cache is None or self._cache.empty:
             return 0, "pattern_table_missing"
+        current_version = build_learning_version(self.cfg) if self.cfg is not None else ""
         if "learning_version" not in self._cache.columns:
-            logging.warning("LEARNING_VERSION_TODO table=pattern_edge_table status=missing_column")
+            logging.warning("LEARNING_VERSION_MISMATCH table=pattern_edge_table status=missing_column expected=%s", current_version)
+            return 0, "version_mismatch"
+        if current_version and not self._cache[self._cache["learning_version"] == current_version].empty:
+            self._cache = self._cache[self._cache["learning_version"] == current_version].copy()
+        elif current_version:
+            logging.warning("LEARNING_VERSION_MISMATCH table=pattern_edge_table expected=%s", current_version)
+            return 0, "version_mismatch"
 
         lk = dict(lookup)
         lk["session_name"] = normalize_session_name(lk.get("session_name", ""))
         df = self._cache.copy()
+        if "side" in df.columns and "side" in lk:
+            df = df[df["side"] == lk["side"]]
+        if "regime" in df.columns and "regime" in lk:
+            reg = str(lk["regime"])
+            if reg in ("range_breakout_pressure_up", "range_breakout_pressure_down"):
+                df = df[df["regime"].isin([reg, "range"]) ]
+            else:
+                df = df[df["regime"] == reg]
+        if df.empty:
+            return 0, "pattern_side_regime_mismatch"
         weights = {
             "regime": 0.28, "side": 0.28, "session_name": 0.16,
             "breakout_pressure_up": 0.08, "breakout_pressure_down": 0.08,

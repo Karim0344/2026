@@ -116,6 +116,7 @@ def _compute_stats_from_trades(trades: list[PaperTrade]) -> dict:
     wins = 0
     losses = 0
     breakeven = 0
+    ambiguous_count = 0
     total_r = 0.0
     by_strategy: dict[str, dict] = {}
     by_side: dict[str, dict] = {"long": {"count": 0, "wins": 0, "total_r": 0.0}, "short": {"count": 0, "wins": 0, "total_r": 0.0}}
@@ -155,7 +156,10 @@ def _compute_stats_from_trades(trades: list[PaperTrade]) -> dict:
         elif rr < 0:
             losses += 1
         else:
-            breakeven += 1
+            if str(t.exit_reason).upper() == "AMBIGUOUS_SKIP":
+                ambiguous_count += 1
+            else:
+                breakeven += 1
 
     winrate = (wins / closed_count * 100.0) if closed_count > 0 else 0.0
     avg_r = (total_r / closed_count) if closed_count > 0 else 0.0
@@ -185,6 +189,7 @@ def _compute_stats_from_trades(trades: list[PaperTrade]) -> dict:
         "wins": wins,
         "losses": losses,
         "breakeven": breakeven,
+        "ambiguous_count": ambiguous_count,
         "sl_count": sl_count,
         "tp1": tp1_count,
         "tp2": tp2_count,

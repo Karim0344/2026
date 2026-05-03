@@ -6,6 +6,7 @@ import numpy as np
 
 from flexbot.mt5 import client
 from flexbot.ai.session_utils import normalize_session_name
+from flexbot.strategy.range_features import compute_range_features
 
 
 @dataclass
@@ -36,6 +37,7 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
     break_buffer_mult = float(getattr(cfg, "range_break_buffer_mult", 0.1))
     wick_body_min = float(getattr(cfg, "range_wick_body_min", 1.15))
 
+    df = compute_range_features(df, cfg)
     zone_slice = df.iloc[-(lookback + 3):-3]
     high_zone = float(zone_slice["high"].max())
     low_zone = float(zone_slice["low"].min())
