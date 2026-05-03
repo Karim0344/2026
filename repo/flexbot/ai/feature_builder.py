@@ -5,7 +5,7 @@ import pandas as pd
 from flexbot.ai.session_utils import normalize_session_name
 
 
-def build_features(df: pd.DataFrame, strategy_name: str, symbol: str, timeframe: str) -> pd.DataFrame:
+def build_features(df: pd.DataFrame, strategy_name: str, symbol: str, timeframe: str, cfg=None) -> pd.DataFrame:
     if df.empty:
         return df.copy()
 
@@ -48,14 +48,23 @@ def build_features(df: pd.DataFrame, strategy_name: str, symbol: str, timeframe:
         labels=["low", "normal", "high"],
     ).astype(str)
 
-    range_high = out["high"].rolling(20, min_periods=5).max()
-    range_low = out["low"].rolling(20, min_periods=5).min()
+    range_lookback = int(getattr(cfg, "range_lookback", 60)) if cfg is not None else 60
+    min_atr_ratio = float(getattr(cfg, "range_min_atr_ratio", 1.0)) if cfg is not None else 1.0
+    max_atr_ratio = float(getattr(cfg, "range_max_atr_ratio", 20.0)) if cfg is not None else 20.0
+    max_atr_ratio_percentile = float(getattr(cfg, "range_max_atr_ratio_percentile", 0.95)) if cfg is not None else 0.95
+    ratio_window = int(getattr(cfg, "range_atr_ratio_percentile_window", 240)) if cfg is not None else 240
+    touch_tol_mult = float(getattr(cfg, "range_touch_tol_mult", 0.2)) if cfg is not None else 0.2
+    required_touches = int(getattr(cfg, "range_required_touches", 1)) if cfg is not None else 1
+    break_buffer_mult = float(getattr(cfg, "range_break_buffer_mult", 0.1)) if cfg is not None else 0.1
+    wick_body_min = float(getattr(cfg, "range_wick_body_min", 1.35)) if cfg is not None else 1.35
+    range_high = out["high"].rolling(range_lookback, min_periods=max(5, range_lookback // 3)).max()
+    range_low = out["low"].rolling(range_lookback, min_periods=max(5, range_lookback // 3)).min()
     width = (range_high - range_low).clip(lower=1e-12)
     out["distance_to_range_high"] = range_high - out["close"]
     out["distance_to_range_low"] = out["close"] - range_low
     out["close_position_within_range"] = (out["close"] - range_low) / width
-    out["touches_top"] = out["high"] >= (range_high - 0.1 * atr)
-    out["touches_bottom"] = out["low"] <= (range_low + 0.1 * atr)
+    out["touches_top"] = out["high"] >= (range_high - (touch_tol_mult * atr))
+    out["touches_bottom"] = out["low"] <= (range_low + (touch_tol_mult * atr))
     out["mid_range_flag"] = out["close_position_within_range"].between(0.4, 0.6)
     out["range_width"] = width
     out["range_width_atr_ratio"] = width / atr.replace(0, np.nan)
@@ -86,19 +95,25 @@ def build_features(df: pd.DataFrame, strategy_name: str, symbol: str, timeframe:
     out["breakout"] = out["breakout_ok_long"] | out["breakout_ok_short"]
     out["trend_score_long"] = (out["trend_ok_long"].astype(int) * 40) + (out["pullback_ok_long"].astype(int) * 25) + (out["bullish_close"].astype(int) * 15) + (out["breakout_ok_long"].astype(int) * 20)
     out["trend_score_short"] = (out["trend_ok_short"].astype(int) * 40) + (out["pullback_ok_short"].astype(int) * 25) + (out["bearish_close"].astype(int) * 15) + (out["breakout_ok_short"].astype(int) * 20)
-    out["trend_min_score"] = 60
-    out["trend_short_extra_score"] = 10
-    out["trend_allow_short"] = False
+    out["trend_min_score"] = int(getattr(cfg, "trend_min_score", 60)) if cfg is not None else 60
+    out["trend_short_extra_score"] = int(getattr(cfg, "trend_short_extra_score", 10)) if cfg is not None else 10
+    out["trend_allow_short"] = bool(getattr(cfg, "trend_allow_short", False)) if cfg is not None else False
     out["near_top"] = out["close_position_within_range"] >= 0.75
     out["near_bottom"] = out["close_position_within_range"] <= 0.25
-    out["fake_break_top"] = out["high"] > range_high
-    out["fake_break_bottom"] = out["low"] < range_low
+    out["fake_break_top"] = out["high"] > (range_high + atr * break_buffer_mult)
+    out["fake_break_bottom"] = out["low"] < (range_low - atr * break_buffer_mult)
     out["reclaim_top"] = out["close"] < range_high
     out["reclaim_bottom"] = out["close"] > range_low
-    out["range_confirmed"] = out["range_width_atr_ratio"].between(1.0, 20.0) & out["touches_top"] & out["touches_bottom"]
-    out["range_width_valid"] = out["range_width_atr_ratio"].between(1.0, 20.0)
-    out["wick_body_ok_top"] = (out["upper_wick"] / out["body_size"].replace(0, np.nan)) >= 1.35
-    out["wick_body_ok_bottom"] = (out["lower_wick"] / out["body_size"].replace(0, np.nan)) >= 1.35
+    ratio_series = out["range_width_atr_ratio"].replace([np.inf, -np.inf], np.nan)
+    ratio_tail = ratio_series.rolling(max(30, ratio_window), min_periods=30)
+    dyn_max = ratio_tail.quantile(min(max(max_atr_ratio_percentile, 0.5), 0.995))
+    effective_max = np.minimum(max_atr_ratio, np.maximum(min_atr_ratio, dyn_max.fillna(max_atr_ratio)))
+    out["range_width_valid"] = (out["range_width_atr_ratio"] >= min_atr_ratio) & (out["range_width_atr_ratio"] <= effective_max)
+    top_touch_count = out["touches_top"].rolling(range_lookback, min_periods=1).sum()
+    bottom_touch_count = out["touches_bottom"].rolling(range_lookback, min_periods=1).sum()
+    out["range_confirmed"] = out["range_width_valid"] & (top_touch_count >= required_touches) & (bottom_touch_count >= required_touches)
+    out["wick_body_ok_top"] = (out["upper_wick"] / out["body_size"].replace(0, np.nan)) >= wick_body_min
+    out["wick_body_ok_bottom"] = (out["lower_wick"] / out["body_size"].replace(0, np.nan)) >= wick_body_min
 
     out["strategy_name"] = strategy_name
     out["symbol"] = symbol

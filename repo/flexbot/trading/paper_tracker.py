@@ -113,6 +113,8 @@ def _compute_stats_from_trades(trades: list[PaperTrade]) -> dict:
     tp3_count = 0
     closed_count = 0
     wins = 0
+    losses = 0
+    breakeven = 0
     total_r = 0.0
     by_strategy: dict[str, dict] = {}
     by_side: dict[str, dict] = {"long": {"count": 0, "wins": 0, "total_r": 0.0}, "short": {"count": 0, "wins": 0, "total_r": 0.0}}
@@ -149,6 +151,10 @@ def _compute_stats_from_trades(trades: list[PaperTrade]) -> dict:
             tp3_count += 1
         if rr > 0:
             wins += 1
+        elif rr < 0:
+            losses += 1
+        else:
+            breakeven += 1
 
     winrate = (wins / closed_count * 100.0) if closed_count > 0 else 0.0
     avg_r = (total_r / closed_count) if closed_count > 0 else 0.0
@@ -176,7 +182,9 @@ def _compute_stats_from_trades(trades: list[PaperTrade]) -> dict:
         "open": open_count,
         "closed": closed_count,
         "wins": wins,
-        "losses": sl_count,
+        "losses": losses,
+        "breakeven": breakeven,
+        "sl_count": sl_count,
         "tp1": tp1_count,
         "tp2": tp2_count,
         "tp3": tp3_count,

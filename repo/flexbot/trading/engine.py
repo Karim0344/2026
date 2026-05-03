@@ -303,6 +303,47 @@ class TradingEngine:
         finally:
             self._learning_lock.release()
 
+
+    def _log_candidate_eval(self, *, intent, regime: str, closed_bar_time: int, decision: str, reject_reason: str):
+        try:
+            spread_points = int(client.get_symbol_diagnostics(self.cfg.symbol).spread_points)
+        except Exception:
+            spread_points = self.cfg.max_spread_points
+        side = "long" if bool(getattr(intent, "is_long", False)) else "short"
+        reason_l = str(getattr(intent, "reason", "") or "").lower()
+        if not bool(getattr(intent, "is_long", False)) and not bool(getattr(intent, "is_short", False)):
+            side = "short" if ("short" in reason_l or "top" in reason_l) else "long"
+
+        features = build_feature_snapshot(
+            signal_reason=intent.reason,
+            intent_debug=intent.debug,
+            spread_points=spread_points,
+            max_spread_points=self.cfg.max_spread_points,
+            regime=regime,
+            strategy_name=intent.reason or "candidate",
+            side=side,
+            symbol=self.cfg.symbol,
+            timeframe=self.cfg.timeframe,
+            bar_time=closed_bar_time,
+        )
+        base_confidence = confidence_score(features=features, is_long=(side == "long"), max_spread=self.cfg.max_spread_points)
+        setup_score = int(round(base_confidence * float(self.cfg.setup_score_weight)))
+        context_score, _ = (0, "context_disabled")
+        if self.cfg.enable_statistical_learning and self.cfg.enable_context_score:
+            context_score, _ = self.context_scorer.score(lookup=features, min_samples=self.cfg.strategy_edge_min_samples)
+        pattern_score, _ = (0, "pattern_disabled")
+        if self.cfg.enable_pattern_learning and self.cfg.enable_pattern_score:
+            pattern_score, _ = self.pattern_scorer.score(lookup=features, min_samples=self.cfg.min_samples_pattern)
+        strategy_edge_score, _ = (0, "strategy_edge_disabled")
+        if self.cfg.enable_strategy_edge_table:
+            strategy_edge_score, _ = self.strategy_edge_scorer.score(lookup=features, min_samples=self.cfg.strategy_edge_min_samples)
+        selector_bonus = 0
+        final_score = int(round(setup_score + context_score + pattern_score + strategy_edge_score + selector_bonus))
+        logging.info(
+            "CANDIDATE_EVAL symbol=%s tf=%s regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s final_score=%s decision=%s reject_reason=%s",
+            self.cfg.symbol, self.cfg.timeframe, regime, intent.reason, side, setup_score, context_score, pattern_score, strategy_edge_score, selector_bonus, final_score, decision, reject_reason,
+        )
+
     def _spread_ok(self) -> bool:
         try:
             diag = client.get_symbol_diagnostics(self.cfg.symbol)
@@ -571,7 +612,7 @@ class TradingEngine:
                     same_bar_priority=str(getattr(self.cfg, "same_bar_priority", "conservative")),
                 )
                 for trade in updates:
-                    if trade.status in ("sl_hit", "tp1_hit", "tp2_hit", "tp3_hit"):
+                    if trade.status != "open":
                         rr_realized = float(getattr(trade, "result_r", 0.0))
                         log_trade_close(
                             trade=trade,
@@ -725,6 +766,9 @@ class TradingEngine:
                 self._log_strategy_reason_change(intent.reason)
                 self._track_signal_flow_window(reason=intent.reason, valid=bool(intent.valid))
                 self._log_filter_diagnostics()
+                if not intent.valid:
+                    self._log_candidate_eval(intent=intent, regime=regime, closed_bar_time=closed_bar_time, decision="skip_invalid_intent", reject_reason=intent.reason)
+
                 if (not intent.valid) and any(
                     tag in (intent.reason or "")
                     for tag in ("trend_near_signal", "range_not_confirmed", "range_idle", "range_breakout_pressure")
@@ -966,22 +1010,6 @@ class TradingEngine:
                         decision = "skip_low_final_score"
                         reject_reason = "low_final_score"
                     logging.info(
-                        "CANDIDATE_EVAL symbol=%s tf=%s regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s final_score=%s decision=%s reject_reason=%s",
-                        self.cfg.symbol,
-                        self.cfg.timeframe,
-                        regime,
-                        intent.reason,
-                        "long" if intent.is_long else "short",
-                        setup_score,
-                        context_score,
-                        pattern_score,
-                        strategy_edge_score,
-                        selector_bonus,
-                        final_score,
-                        decision,
-                        reject_reason,
-                    )
-                    logging.info(
                         "LIVE_DECISION regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s spread_penalty=%s bad_session_penalty=%s final_score=%s decision=%s context_reason=%s pattern_reason=%s strategy_edge_reason=%s",
                         regime,
                         intent.reason,
@@ -999,6 +1027,7 @@ class TradingEngine:
                         pattern_reason,
                         strategy_edge_reason,
                     )
+                    self._log_candidate_eval(intent=intent, regime=regime, closed_bar_time=closed_bar_time, decision=decision, reject_reason=reject_reason)
                     if decision == "skip_low_final_score":
                         self.status.last_msg = f"skip_low_final_score:{final_score}<{min_required}"
                         self._log_strategy_reason_change(self.status.last_msg)
