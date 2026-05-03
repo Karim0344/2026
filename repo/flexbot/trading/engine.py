@@ -140,7 +140,8 @@ class TradingEngine:
         self.last_loss_ts: float = 0.0
 
     def _soft_score(self, raw_score: float) -> int:
-        return int(round(100.0 / (1.0 + math.exp(-float(raw_score) / 20.0))))
+        scaled = float(raw_score) / 2.0
+        return int(round(100.0 / (1.0 + math.exp(-scaled / 20.0))))
 
     def start(self):
         mt5_initialize_started = False
@@ -990,6 +991,7 @@ class TradingEngine:
                     if strategy_edge_reason == "no_data":
                         no_data_penalty += 10
                     if "version_mismatch" in (context_reason, pattern_reason, strategy_edge_reason):
+                        logging.warning("LEARNING_VERSION_MISMATCH — rebuilding")
                         self._refresh_learning_tables_if_needed(force=True)
                         self.status.last_msg = "learning_version_mismatch_rebuild"
                         self._log_strategy_reason_change(self.status.last_msg)
@@ -1078,8 +1080,8 @@ class TradingEngine:
                         decision = "skip_low_final_score"
                         reject_reason = "low_final_score"
                     if strategy_edge_score <= -12:
-                        decision = "blocked_strong_negative_edge"
-                        reject_reason = "blocked_strong_negative_edge"
+                        decision = "blocked_negative_edge"
+                        reject_reason = "blocked_negative_edge"
                     if self.last_loss_ts > 0:
                         cooldown_s = max(0, int(getattr(self.cfg, "cooldown_minutes_after_loss", 10))) * 60
                         if (time.time() - self.last_loss_ts) < cooldown_s:
@@ -1117,7 +1119,7 @@ class TradingEngine:
                         strategy_edge_reason,
                     )
                     self._log_candidate_eval(intent=intent, regime=regime, closed_bar_time=closed_bar_time, decision=decision, reject_reason=reject_reason)
-                    if decision in ("skip_low_final_score", "blocked_strong_negative_edge", "cooldown_after_loss", "max_trades_per_hour", "max_trades_per_session"):
+                    if decision in ("skip_low_final_score", "blocked_negative_edge", "cooldown_after_loss", "max_trades_per_hour", "max_trades_per_session"):
                         self.status.last_msg = f"skip_low_final_score:{final_score}<{min_required}"
                         self._log_strategy_reason_change(self.status.last_msg)
                         self.stop_event.wait(self.cfg.entry_check_seconds)

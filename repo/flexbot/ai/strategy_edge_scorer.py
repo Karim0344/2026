@@ -43,6 +43,10 @@ class StrategyEdgeScorer:
         if "symbol" not in df.columns or "timeframe" not in df.columns or not current_symbol or not current_timeframe:
             return 0, "no_data"
         df = df[(df["symbol"] == current_symbol) & (df["timeframe"] == current_timeframe)]
+        if "side" in df.columns and lk.get("side") is not None:
+            df = df[df["side"] == lk.get("side")]
+        if "regime" in df.columns and lk.get("regime") is not None:
+            df = df[df["regime"] == lk.get("regime")]
         if df.empty:
             return 0, "no_data"
 

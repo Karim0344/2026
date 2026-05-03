@@ -40,6 +40,10 @@ class ContextScorer:
         if "symbol" not in df.columns or "timeframe" not in df.columns or not current_symbol or not current_timeframe:
             return 0, "no_data"
         df = df[(df["symbol"] == current_symbol) & (df["timeframe"] == current_timeframe)]
+        if "side" in df.columns and lookup.get("side") is not None:
+            df = df[df["side"] == lookup.get("side")]
+        if "regime" in df.columns and lookup.get("regime") is not None:
+            df = df[df["regime"] == lookup.get("regime")]
         if df.empty:
             return 0, "no_data"
 
