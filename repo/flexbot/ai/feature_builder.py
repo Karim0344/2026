@@ -84,6 +84,21 @@ def build_features(df: pd.DataFrame, strategy_name: str, symbol: str, timeframe:
     out["pullback"] = out["pullback_ok_long"] | out["pullback_ok_short"]
     out["momentum"] = out["bullish_close"] | out["bearish_close"]
     out["breakout"] = out["breakout_ok_long"] | out["breakout_ok_short"]
+    out["trend_score_long"] = (out["trend_ok_long"].astype(int) * 40) + (out["pullback_ok_long"].astype(int) * 25) + (out["bullish_close"].astype(int) * 15) + (out["breakout_ok_long"].astype(int) * 20)
+    out["trend_score_short"] = (out["trend_ok_short"].astype(int) * 40) + (out["pullback_ok_short"].astype(int) * 25) + (out["bearish_close"].astype(int) * 15) + (out["breakout_ok_short"].astype(int) * 20)
+    out["trend_min_score"] = 60
+    out["trend_short_extra_score"] = 10
+    out["trend_allow_short"] = False
+    out["near_top"] = out["close_position_within_range"] >= 0.75
+    out["near_bottom"] = out["close_position_within_range"] <= 0.25
+    out["fake_break_top"] = out["high"] > range_high
+    out["fake_break_bottom"] = out["low"] < range_low
+    out["reclaim_top"] = out["close"] < range_high
+    out["reclaim_bottom"] = out["close"] > range_low
+    out["range_confirmed"] = out["range_width_atr_ratio"].between(1.0, 20.0) & out["touches_top"] & out["touches_bottom"]
+    out["range_width_valid"] = out["range_width_atr_ratio"].between(1.0, 20.0)
+    out["wick_body_ok_top"] = (out["upper_wick"] / out["body_size"].replace(0, np.nan)) >= 1.35
+    out["wick_body_ok_bottom"] = (out["lower_wick"] / out["body_size"].replace(0, np.nan)) >= 1.35
 
     out["strategy_name"] = strategy_name
     out["symbol"] = symbol

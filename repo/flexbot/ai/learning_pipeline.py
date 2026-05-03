@@ -30,6 +30,7 @@ class LearningRunResult:
     pattern_path: str = ""
     strategy_path: str = ""
     summary_path: str = ""
+    strategy_rows: int = 0
 
 
 class LearningPipeline:
@@ -89,8 +90,11 @@ class LearningPipeline:
         features_path = self._save_learning_frame(features_df, "features")
         logging.info("FEATURES_BUILT rows=%s path=%s", len(features_df), features_path)
 
-        outcomes_df = label_outcomes(
-            features_df,
+        outcome_frames: list[pd.DataFrame] = []
+        for _, group in features_df.groupby(["symbol", "timeframe", "side"], dropna=False):
+            group = group.sort_values("time").reset_index(drop=True)
+            labeled = label_outcomes(
+            group,
             horizon_bars=self.cfg.learning_horizon_bars,
             spread_cost_points=self.cfg.learning_spread_cost_points,
             slippage_points=self.cfg.learning_slippage_points,
@@ -102,7 +106,10 @@ class LearningPipeline:
             tp2_size_ratio=self.cfg.tp2_size_ratio,
             tp3_size_ratio=self.cfg.tp3_size_ratio,
             same_bar_priority=self.cfg.same_bar_priority,
+            learning_timeout_policy=self.cfg.learning_timeout_policy,
         )
+            outcome_frames.append(labeled)
+        outcomes_df = pd.concat(outcome_frames, ignore_index=True) if outcome_frames else pd.DataFrame()
         outcomes_path = self._save_learning_frame(outcomes_df, "outcomes")
         logging.info("OUTCOMES_LABELED rows=%s path=%s", len(outcomes_df), outcomes_path)
 
@@ -120,12 +127,15 @@ class LearningPipeline:
         pattern_path = save_pattern_edge_table(pattern_table, self.cfg.store_learning_path)
         logging.info("PATTERN_TABLE_BUILT rows=%s path=%s", len(pattern_table), pattern_path)
 
-        strategy_table = build_strategy_edge_table(outcomes_df, min_samples=self.cfg.min_samples_context)
+        strategy_table = build_strategy_edge_table(outcomes_df, min_samples=self.cfg.strategy_edge_min_samples)
         strategy_path = Path(self.cfg.store_learning_path) / "strategy_edge_table.csv"
         strategy_table.to_csv(strategy_path, index=False)
-        logging.info("STRATEGY_EDGE_TABLE_BUILT rows=%s path=%s", len(strategy_table), strategy_path)
+        strategy_rows = len(strategy_table)
+        logging.info("STRATEGY_EDGE_TABLE_BUILT rows=%s path=%s", strategy_rows, strategy_path)
+        if strategy_rows == 0:
+            logging.warning("STRATEGY_EDGE_TABLE_EMPTY symbol=%s", symbol)
 
-        summary = build_learning_summary(context_table=context_table, pattern_table=pattern_table)
+        summary = build_learning_summary(context_table=context_table, pattern_table=pattern_table, strategy_table=strategy_table)
         summary_path = save_learning_summary(summary=summary, report_dir=self.cfg.store_reports_path)
         logging.info("LEARNING_SUMMARY_SAVED path=%s", summary_path)
         logging.info("LEARNING_PIPELINE_END symbol=%s status=ok", symbol)
@@ -143,6 +153,7 @@ class LearningPipeline:
             pattern_path=str(pattern_path),
             strategy_path=str(strategy_path),
             summary_path=str(summary_path),
+            strategy_rows=strategy_rows,
         )
 
     def _timeframes_to_refresh(self) -> list[str]:

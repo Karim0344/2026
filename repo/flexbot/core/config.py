@@ -66,6 +66,8 @@ class BotConfig:
     learning_pipeline_mode: str = "manual"  # startup/manual/background
     learning_horizon_bars: int = 20
     same_bar_priority: str = "conservative"  # conservative/optimistic/skip_ambiguous
+    learning_timeout_policy: str = "mark_to_market"  # mark_to_market/breakeven/skip
+    strategy_edge_min_samples: int = 20
 
     store_history_path: str = "data/history"
     store_learning_path: str = "data/learned"

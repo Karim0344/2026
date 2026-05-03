@@ -49,4 +49,6 @@ class PatternScorer:
         raw = max(-20.0, min(20.0, avg_r * 25.0 * ms))
         score = int(round(raw * self.weight))
         logging.info("PATTERN_SCORE method=fuzzy match_score=%.2f count=%s avg_r=%.4f score=%s", ms, count, avg_r, score)
+        if score < 0:
+            logging.info("PATTERN_SCORE_NEGATIVE match_score=%.2f avg_r=%.4f score=%s reason=pattern_penalty", ms, avg_r, score)
         return score, "pattern_fuzzy_match"

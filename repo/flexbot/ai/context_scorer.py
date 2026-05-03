@@ -49,6 +49,8 @@ class ContextScorer:
             raw = max(-15.0, min(15.0, avg_r * 20.0))
             score = int(round(raw * self.weight))
             logging.info("CONTEXT_SCORE method=backoff_level_%s count=%s avg_r=%.4f score=%s", idx, count, avg_r, score)
+            if score < 0:
+                logging.info("CONTEXT_SCORE_NEGATIVE count=%s avg_r=%.4f score=%s reason=context_penalty", count, avg_r, score)
             return score, f"context_backoff_match_{idx}"
 
         return 0, "context_no_match"

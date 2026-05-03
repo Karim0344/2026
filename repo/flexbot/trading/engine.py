@@ -278,12 +278,13 @@ class TradingEngine:
             if self.cfg.enable_statistical_learning or self.cfg.enable_pattern_learning:
                 result = self.learning_pipeline.run(symbol=self.cfg.symbol)
                 logging.info(
-                    "LEARNING_PIPELINE_DONE history_rows=%s feature_rows=%s outcome_rows=%s context_rows=%s pattern_rows=%s history_path=%s features_path=%s outcomes_path=%s context_path=%s pattern_path=%s summary_path=%s",
+                    "LEARNING_PIPELINE_DONE history_rows=%s feature_rows=%s outcome_rows=%s context_rows=%s pattern_rows=%s strategy_rows=%s history_path=%s features_path=%s outcomes_path=%s context_path=%s pattern_path=%s summary_path=%s",
                     result.history_rows,
                     result.feature_rows,
                     result.outcome_rows,
                     result.context_rows,
                     result.pattern_rows,
+                    result.strategy_rows,
                     result.history_path,
                     result.features_path,
                     result.outcomes_path,
@@ -750,7 +751,7 @@ class TradingEngine:
                     if self.cfg.enable_statistical_learning and self.cfg.enable_context_score:
                         context_score, context_reason = self.context_scorer.score(
                             lookup=candidate_features,
-                            min_samples=self.cfg.min_samples_context,
+                            min_samples=self.cfg.strategy_edge_min_samples,
                         )
                     pattern_score, pattern_reason = (0, "pattern_disabled")
                     if self.cfg.enable_pattern_learning and self.cfg.enable_pattern_score:
@@ -870,7 +871,7 @@ class TradingEngine:
                     if self.cfg.enable_statistical_learning and self.cfg.enable_context_score:
                         context_score, context_reason = self.context_scorer.score(
                             lookup=features,
-                            min_samples=self.cfg.min_samples_context,
+                            min_samples=self.cfg.strategy_edge_min_samples,
                         )
 
                     pattern_score = 0
@@ -885,7 +886,7 @@ class TradingEngine:
                     if self.cfg.enable_strategy_edge_table:
                         strategy_edge_score, strategy_edge_reason = self.strategy_edge_scorer.score(
                             lookup=features,
-                            min_samples=self.cfg.min_samples_context,
+                            min_samples=self.cfg.strategy_edge_min_samples,
                         )
 
                     spread_penalty = 0 if spread_points < self.cfg.max_spread_points else 8
@@ -957,7 +958,9 @@ class TradingEngine:
                         features,
                     )
                     min_required = self.cfg.min_final_score_paper if self.cfg.paper_mode else self.cfg.min_final_score_live
-                    decision = "paper_signal" if self.cfg.paper_mode else "live_signal"
+                    decision = "live_signal"
+                    if self.cfg.paper_mode:
+                        decision = "paper_signal"
                     reject_reason = ""
                     if final_score < min_required:
                         decision = "skip_low_final_score"

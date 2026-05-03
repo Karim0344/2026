@@ -31,8 +31,8 @@ def test_paper_tracker_tp1_then_sl_weighted_result():
 
 def test_strategy_edge_simulator_only_real_setups():
     df = pd.DataFrame([
-        {"regime":"trend","side":"long","trend_ok":True,"pullback":True,"momentum":True,"breakout":True,"session_name":"London","timeframe":"M5","result_r":1.0,"tp1_hit":True,"tp2_hit":False,"tp3_hit":False,"sl_hit":False},
-        {"regime":"trend","side":"long","trend_ok":False,"pullback":False,"momentum":False,"breakout":False,"session_name":"London","timeframe":"M5","result_r":-1.0,"tp1_hit":False,"tp2_hit":False,"tp3_hit":False,"sl_hit":True},
+        {"regime":"trend","trend_score_long":75,"trend_score_short":10,"trend_min_score":60,"trend_short_extra_score":10,"trend_allow_short":False,"pullback_ok_long":True,"pullback_ok_short":False,"session_name":"London","timeframe":"M5","result_r":1.0,"tp1_hit":True,"tp2_hit":False,"tp3_hit":False,"sl_hit":False},
+        {"regime":"trend","trend_score_long":20,"trend_score_short":10,"trend_min_score":60,"trend_short_extra_score":10,"trend_allow_short":False,"pullback_ok_long":False,"pullback_ok_short":False,"session_name":"London","timeframe":"M5","result_r":-1.0,"tp1_hit":False,"tp2_hit":False,"tp3_hit":False,"sl_hit":True},
     ])
     table = build_strategy_edge_table(df, min_samples=1)
     assert len(table) == 1

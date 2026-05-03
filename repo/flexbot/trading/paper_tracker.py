@@ -254,6 +254,22 @@ def _weighted_result_r(trade: PaperTrade, exit_reason: str) -> float:
     return round(rr, 4)
 
 
+
+
+def _resolve_same_bar_exit(tp_hit: bool, sl_hit: bool, same_bar_priority: str) -> str | None:
+    if tp_hit and sl_hit:
+        if same_bar_priority == "conservative":
+            return "SL"
+        if same_bar_priority == "optimistic":
+            return "TP3"
+        if same_bar_priority == "skip_ambiguous":
+            return "AMBIGUOUS_SKIP"
+    elif tp_hit:
+        return "TP3"
+    elif sl_hit:
+        return "SL"
+    return None
+
 def _update_trade_with_bar(trade: PaperTrade, bar_time: int, bar_high: float, bar_low: float, same_bar_priority: str = "conservative") -> tuple[PaperTrade, bool]:
     if trade.status != "open":
         return trade, False
@@ -274,16 +290,14 @@ def _update_trade_with_bar(trade: PaperTrade, bar_time: int, bar_high: float, ba
             changed = True
         tp3_hit = bar_high >= trade.tp3
         sl_hit = bar_low <= trade.sl
-        if tp3_hit and sl_hit and same_bar_priority == "skip_ambiguous":
-            return trade, changed
-        if tp3_hit and sl_hit and same_bar_priority == "conservative":
-            trade.sl_hit = True
-            trade.status = "sl_hit"
-            trade.exit_reason = "SL"
-            trade.result_r = _weighted_result_r(trade, "SL")
+        decision = _resolve_same_bar_exit(tp3_hit, sl_hit, same_bar_priority)
+        if decision == "AMBIGUOUS_SKIP":
+            trade.status = "ambiguous_skip"
+            trade.exit_reason = "AMBIGUOUS_SKIP"
+            trade.result_r = 0.0
             trade.closed_bar_time = bar_time
             return trade, True
-        if tp3_hit:
+        if decision == "TP3":
             trade.tp1_hit = True
             trade.tp2_hit = True
             trade.tp3_hit = True
@@ -292,7 +306,7 @@ def _update_trade_with_bar(trade: PaperTrade, bar_time: int, bar_high: float, ba
             trade.result_r = _weighted_result_r(trade, "TP3")
             trade.closed_bar_time = bar_time
             return trade, True
-        if sl_hit:
+        if decision == "SL":
             trade.sl_hit = True
             trade.status = "sl_hit"
             trade.exit_reason = "SL"
@@ -308,16 +322,14 @@ def _update_trade_with_bar(trade: PaperTrade, bar_time: int, bar_high: float, ba
             changed = True
         tp3_hit = bar_low <= trade.tp3
         sl_hit = bar_high >= trade.sl
-        if tp3_hit and sl_hit and same_bar_priority == "skip_ambiguous":
-            return trade, changed
-        if tp3_hit and sl_hit and same_bar_priority == "conservative":
-            trade.sl_hit = True
-            trade.status = "sl_hit"
-            trade.exit_reason = "SL"
-            trade.result_r = _weighted_result_r(trade, "SL")
+        decision = _resolve_same_bar_exit(tp3_hit, sl_hit, same_bar_priority)
+        if decision == "AMBIGUOUS_SKIP":
+            trade.status = "ambiguous_skip"
+            trade.exit_reason = "AMBIGUOUS_SKIP"
+            trade.result_r = 0.0
             trade.closed_bar_time = bar_time
             return trade, True
-        if tp3_hit:
+        if decision == "TP3":
             trade.tp1_hit = True
             trade.tp2_hit = True
             trade.tp3_hit = True
@@ -326,7 +338,7 @@ def _update_trade_with_bar(trade: PaperTrade, bar_time: int, bar_high: float, ba
             trade.result_r = _weighted_result_r(trade, "TP3")
             trade.closed_bar_time = bar_time
             return trade, True
-        if sl_hit:
+        if decision == "SL":
             trade.sl_hit = True
             trade.status = "sl_hit"
             trade.exit_reason = "SL"
