@@ -18,9 +18,22 @@ def _strategy_from_row(row: pd.Series) -> str | None:
             return "RANGE_SHORT"
         return None
 
-    if trend_score_long >= trend_min and bool(row.get("pullback_ok_long", False)):
+    effective_min = float(row.get("effective_min_score", trend_min))
+    require_htf = bool(row.get("trend_require_htf", False))
+    htf_ok_long = bool(row.get("htf_ok_long", True))
+    htf_ok_short = bool(row.get("htf_ok_short", True))
+    require_breakout = bool(row.get("require_breakout", False))
+    breakout_ok_long = bool(row.get("breakout_ok_long", True))
+    breakout_ok_short = bool(row.get("breakout_ok_short", True))
+    momentum_long = bool(row.get("bullish_close", True))
+    momentum_short = bool(row.get("bearish_close", True))
+
+    long_gate = (not require_htf or htf_ok_long) and (not require_breakout or breakout_ok_long) and momentum_long
+    short_gate = (not require_htf or htf_ok_short) and (not require_breakout or breakout_ok_short) and momentum_short
+
+    if trend_score_long >= effective_min and bool(row.get("pullback_ok_long", False)) and long_gate:
         return "PRO_LONG"
-    if allow_short and trend_score_short >= (trend_min + short_extra) and bool(row.get("pullback_ok_short", False)):
+    if allow_short and trend_score_short >= (effective_min + short_extra) and bool(row.get("pullback_ok_short", False)) and short_gate:
         return "PRO_SHORT"
     return None
 

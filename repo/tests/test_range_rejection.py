@@ -1,5 +1,6 @@
 import importlib
 import sys
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -40,6 +41,9 @@ def test_range_intent_emits_short_on_confirmed_top_rejection():
     with patch(
         "flexbot.strategy.range_rejection.client.copy_rates",
         return_value=_build_sideways_rates(),
+    ), patch(
+        "flexbot.strategy.range_rejection.client.broker_datetime_utc",
+        return_value=datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc),
     ):
         intent = mod.get_range_intent("XAUUSD", "M5", cfg=SimpleNamespace())
 
@@ -70,6 +74,9 @@ def test_range_intent_allows_fake_break_reclaim_inside_middle_band():
     with patch(
         "flexbot.strategy.range_rejection.client.copy_rates",
         return_value=rates,
+    ), patch(
+        "flexbot.strategy.range_rejection.client.broker_datetime_utc",
+        return_value=datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc),
     ):
         intent = mod.get_range_intent("XAUUSD", "M5", cfg=SimpleNamespace())
 
@@ -103,6 +110,9 @@ def test_range_intent_uses_percentile_based_max_atr_ratio():
     with patch(
         "flexbot.strategy.range_rejection.client.copy_rates",
         return_value=rates,
+    ), patch(
+        "flexbot.strategy.range_rejection.client.broker_datetime_utc",
+        return_value=datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc),
     ):
         intent = mod.get_range_intent("XAUUSD", "M5", cfg=cfg)
 

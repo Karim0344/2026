@@ -58,7 +58,10 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
     c1 = df.iloc[-3]
 
     bar_time = int(c0["time"])
-    session_hour = client.broker_datetime_utc(symbol).hour
+    try:
+        session_hour = client.broker_datetime_utc(symbol).hour
+    except Exception:
+        session_hour = pd.to_datetime(c0["time"], unit="s", utc=True).hour
     session = normalize_session_name(session_hour)
 
     close = float(c0["close"])

@@ -59,7 +59,7 @@ class LearningPipeline:
             if history_frames
             else pd.DataFrame()
         )
-        history_path = self._save_learning_frame(history_df, "history")
+        history_path = self._save_learning_frame(history_df, "combined_history")
 
         if history_df.empty:
             logging.info("HISTORY_REFRESHED rows=0 path=%s", history_path)
@@ -78,6 +78,7 @@ class LearningPipeline:
                 strategy_name="historical_learning",
                 symbol=symbol,
                 timeframe=tf,
+                cfg=self.cfg,
             )
             built["regime"] = self._infer_regime(built)
             features_frames.append(self._expand_directions(built))
@@ -87,7 +88,7 @@ class LearningPipeline:
             if features_frames
             else pd.DataFrame()
         )
-        features_path = self._save_learning_frame(features_df, "features")
+        features_path = self._save_learning_frame(features_df, "learning_features")
         logging.info("FEATURES_BUILT rows=%s path=%s", len(features_df), features_path)
 
         outcome_frames: list[pd.DataFrame] = []
@@ -110,7 +111,7 @@ class LearningPipeline:
         )
             outcome_frames.append(labeled)
         outcomes_df = pd.concat(outcome_frames, ignore_index=True) if outcome_frames else pd.DataFrame()
-        outcomes_path = self._save_learning_frame(outcomes_df, "outcomes")
+        outcomes_path = self._save_learning_frame(outcomes_df, "learning_outcomes")
         logging.info("OUTCOMES_LABELED rows=%s path=%s", len(outcomes_df), outcomes_path)
 
         context_table = build_context_edge_table(

@@ -86,5 +86,7 @@
   "block_side_inconsistent_features": true,
   "learning_pipeline_mode": "manual",
   "same_bar_priority": "conservative",
-  "learning_horizon_bars": 20
+  "learning_horizon_bars": 20,
+  "strategy_edge_min_samples": 20,
+  "learning_timeout_policy": "mark_to_market"
 }
