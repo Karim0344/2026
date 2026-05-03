@@ -44,7 +44,11 @@ class HistoricalDataRecorder:
             existing["time"] = pd.to_datetime(existing["time"], utc=True)
 
         merged = pd.concat([existing, df], ignore_index=True)
-        merged = merged.drop_duplicates(subset=["time"], keep="last").sort_values("time")
+        if "symbol" not in merged.columns:
+            merged["symbol"] = symbol
+        if "timeframe" not in merged.columns:
+            merged["timeframe"] = timeframe
+        merged = merged.drop_duplicates(subset=["symbol", "timeframe", "time"], keep="last").sort_values("time")
         save_frame(path, merged.reset_index(drop=True))
         return merged.reset_index(drop=True)
 
