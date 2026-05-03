@@ -59,6 +59,10 @@ class BotConfig:
     duplicate_entry_atr_tolerance: float = 0.5
     enable_strategy_edge_table: bool = True
     strategy_edge_weight: float = 1.0
+    weight_setup: float = 1.0
+    weight_context: float = 0.7
+    weight_pattern: float = 0.7
+    weight_strategy: float = 0.8
     learning_spread_cost_points: int = 10
     learning_slippage_points: int = 5
     learning_point_size: float = 0.01

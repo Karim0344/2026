@@ -23,7 +23,7 @@ class PatternScorer:
         if self._cache is None:
             self.refresh()
         if self._cache is None or self._cache.empty:
-            return 0, "pattern_table_missing"
+            return 0, "no_data"
         current_version = build_learning_version(self.cfg) if self.cfg is not None else ""
         if "learning_version" not in self._cache.columns:
             logging.warning("LEARNING_VERSION_MISMATCH table=pattern_edge_table status=missing_column expected=%s", current_version)
@@ -33,6 +33,16 @@ class PatternScorer:
         elif current_version:
             logging.warning("LEARNING_VERSION_MISMATCH table=pattern_edge_table expected=%s", current_version)
             return 0, "version_mismatch"
+        current_symbol = str(lookup.get("symbol", ""))
+        current_timeframe = str(lookup.get("timeframe", ""))
+        if "symbol" in self._cache.columns and current_symbol:
+            self._cache = self._cache[self._cache["symbol"] == current_symbol].copy()
+            if self._cache.empty:
+                return 0, "symbol_mismatch"
+        if "timeframe" in self._cache.columns and current_timeframe:
+            self._cache = self._cache[self._cache["timeframe"] == current_timeframe].copy()
+            if self._cache.empty:
+                return 0, "tf_mismatch"
 
         lk = dict(lookup)
         lk["session_name"] = normalize_session_name(lk.get("session_name", ""))
@@ -46,7 +56,7 @@ class PatternScorer:
             else:
                 df = df[df["regime"] == reg]
         if df.empty:
-            return 0, "pattern_side_regime_mismatch"
+            return 0, "no_data"
         weights = {
             "regime": 0.28, "side": 0.28, "session_name": 0.16,
             "breakout_pressure_up": 0.08, "breakout_pressure_down": 0.08,
@@ -61,11 +71,11 @@ class PatternScorer:
         df["match_score"] = sim / total_w
         df = df[df.get("count", 0) >= int(min_samples)]
         if df.empty:
-            return 0, "pattern_too_few_samples"
+            return 0, "no_data"
         best = df.sort_values(["match_score", "count", "avg_r"], ascending=[False, False, False]).iloc[0]
         ms = float(best.get("match_score", 0.0))
         if ms < 0.55:
-            return 0, "pattern_no_match"
+            return 0, "no_data"
         avg_r = float(best.get("avg_r", 0.0)); count = int(best.get("count", 0))
         raw = max(-20.0, min(20.0, avg_r * 25.0 * ms))
         confidence = min(1.0, count / max(int(min_samples) * 3, 1))

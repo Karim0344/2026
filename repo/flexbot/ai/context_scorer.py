@@ -23,7 +23,7 @@ class ContextScorer:
         if self._cache is None:
             self.refresh()
         if self._cache is None or self._cache.empty:
-            return 0, "context_table_missing"
+            return 0, "no_data"
         current_version = build_learning_version(self.cfg) if self.cfg is not None else ""
         if "learning_version" not in self._cache.columns:
             logging.warning("LEARNING_VERSION_MISMATCH table=context_edge_table status=missing_column expected=%s", current_version)
@@ -33,6 +33,16 @@ class ContextScorer:
         elif current_version:
             logging.warning("LEARNING_VERSION_MISMATCH table=context_edge_table expected=%s", current_version)
             return 0, "version_mismatch"
+        current_symbol = str(lookup.get("symbol", ""))
+        current_timeframe = str(lookup.get("timeframe", ""))
+        if "symbol" in self._cache.columns and current_symbol:
+            self._cache = self._cache[self._cache["symbol"] == current_symbol].copy()
+            if self._cache.empty:
+                return 0, "symbol_mismatch"
+        if "timeframe" in self._cache.columns and current_timeframe:
+            self._cache = self._cache[self._cache["timeframe"] == current_timeframe].copy()
+            if self._cache.empty:
+                return 0, "tf_mismatch"
 
         lookup = dict(lookup)
         lookup["session_name"] = normalize_session_name(lookup.get("session_name", ""))
@@ -65,4 +75,4 @@ class ContextScorer:
                 logging.info("CONTEXT_SCORE_NEGATIVE count=%s avg_r=%.4f score=%s reason=context_penalty", count, avg_r, score)
             return score, f"context_backoff_match_{idx}"
 
-        return 0, "context_no_match"
+        return 0, "no_data"
