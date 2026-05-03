@@ -22,6 +22,8 @@ class PatternScorer:
             self.refresh()
         if self._cache is None or self._cache.empty:
             return 0, "pattern_table_missing"
+        if "learning_version" not in self._cache.columns:
+            logging.warning("LEARNING_VERSION_TODO table=pattern_edge_table status=missing_column")
 
         lk = dict(lookup)
         lk["session_name"] = normalize_session_name(lk.get("session_name", ""))
@@ -47,8 +49,9 @@ class PatternScorer:
             return 0, "pattern_no_match"
         avg_r = float(best.get("avg_r", 0.0)); count = int(best.get("count", 0))
         raw = max(-20.0, min(20.0, avg_r * 25.0 * ms))
-        score = int(round(raw * self.weight))
-        logging.info("PATTERN_SCORE method=fuzzy match_score=%.2f count=%s avg_r=%.4f score=%s", ms, count, avg_r, score)
+        confidence = min(1.0, count / max(int(min_samples) * 3, 1))
+        score = int(round(raw * confidence * self.weight))
+        logging.info("PATTERN_SCORE method=fuzzy match_score=%.2f count=%s confidence=%.2f avg_r=%.4f score=%s", ms, count, confidence, avg_r, score)
         if score < 0:
             logging.info("PATTERN_SCORE_NEGATIVE match_score=%.2f avg_r=%.4f score=%s reason=pattern_penalty", ms, avg_r, score)
         return score, "pattern_fuzzy_match"

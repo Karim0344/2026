@@ -67,9 +67,10 @@ def upsert_paper_trade(trade: PaperTrade, path: str = "paper_trades.json") -> No
 
 
 def _trade_realized_r(trade: PaperTrade) -> float:
-    if trade.result_r:
+    try:
         return float(trade.result_r)
-    return 0.0
+    except Exception:
+        return 0.0
 
 
 def _trade_strategy_type(trade: PaperTrade) -> str:

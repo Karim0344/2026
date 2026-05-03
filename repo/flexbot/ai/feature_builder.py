@@ -33,13 +33,16 @@ def build_features(df: pd.DataFrame, strategy_name: str, symbol: str, timeframe:
     out["indecision_flag"] = out["body_ratio"] <= 0.25
     out["compression_flag"] = out["candle_range"] <= out["candle_range"].rolling(20, min_periods=5).quantile(0.25)
 
-    fast_ma = out["close"].rolling(20, min_periods=5).mean()
-    slow_ma = out["close"].rolling(50, min_periods=10).mean()
+    ma_fast_period = int(getattr(cfg, "ma_fast", 50)) if cfg is not None else 50
+    ma_trend_period = int(getattr(cfg, "ma_trend", 100)) if cfg is not None else 100
+    fast_ma = out["close"].rolling(ma_fast_period, min_periods=max(5, ma_fast_period // 4)).mean()
+    slow_ma = out["close"].rolling(ma_trend_period, min_periods=max(10, ma_trend_period // 4)).mean()
     out["distance_to_ma_fast"] = out["close"] - fast_ma
     out["distance_to_ma_slow"] = out["close"] - slow_ma
     out["trend_strength"] = (fast_ma - slow_ma) / out["candle_range"]
 
-    atr = _atr(out, period=14)
+    atr_period = int(getattr(cfg, "atr_period", 14)) if cfg is not None else 14
+    atr = _atr(out, period=atr_period)
     out["atr"] = atr
     out["atr_percentile"] = atr.rolling(252, min_periods=30).rank(pct=True)
     out["volatility_bucket"] = pd.cut(
