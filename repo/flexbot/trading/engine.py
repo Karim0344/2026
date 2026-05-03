@@ -133,6 +133,7 @@ class TradingEngine:
             weight=self.cfg.strategy_edge_weight,
         )
         self.last_signal_ts: float = 0.0
+        self.range_no_signal_count: int = 0
 
     def start(self):
         mt5_initialize_started = False
@@ -345,11 +346,15 @@ class TradingEngine:
         bad_session_penalty = 3 if features.get("session_name") in ("Asia",) else 0
         side_inconsistent = bool(getattr(self.cfg, "block_side_inconsistent_features", True)) and features.get("intended_side") in ("long", "short") and features.get("intended_side") != side
         side_penalty = 30 if side_inconsistent else 0
-        raw_score = setup_score + context_score + pattern_score + strategy_edge_score + selector_bonus - spread_penalty - bad_session_penalty - side_penalty
-        final_score = max(0, min(100, int(round(raw_score))))
+        context_score = max(-15, min(15, context_score))
+        pattern_score = max(-15, min(15, pattern_score))
+        strategy_edge_score = max(-20, min(20, strategy_edge_score))
+        raw_score_pre = setup_score + context_score + pattern_score + strategy_edge_score + selector_bonus
+        raw_score_final = raw_score_pre - spread_penalty - bad_session_penalty - side_penalty
+        final_score = max(0, min(100, int(round(raw_score_final))))
         logging.info(
-            "CANDIDATE_EVAL stage=%s symbol=%s tf=%s regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s spread_penalty=%s bad_session_penalty=%s side_penalty=%s raw_score=%s final_score=%s decision=%s reject_reason=%s",
-            ("pre_filter" if str(decision).startswith("skip_") else "final_decision"), self.cfg.symbol, self.cfg.timeframe, regime, intent.reason, side, setup_score, context_score, pattern_score, strategy_edge_score, selector_bonus, spread_penalty, bad_session_penalty, side_penalty, raw_score, final_score, decision, reject_reason,
+            "CANDIDATE_EVAL stage=%s symbol=%s tf=%s regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s spread_penalty=%s bad_session_penalty=%s side_penalty=%s raw_score_pre=%s raw_score_final=%s final_score=%s decision=%s reject_reason=%s",
+            ("pre_filter" if str(decision).startswith("skip_") else "final"), self.cfg.symbol, self.cfg.timeframe, regime, intent.reason, side, setup_score, context_score, pattern_score, strategy_edge_score, selector_bonus, spread_penalty, bad_session_penalty, side_penalty, raw_score_pre, raw_score_final, final_score, decision, reject_reason,
         )
 
     def _spread_ok(self) -> bool:
@@ -703,6 +708,13 @@ class TradingEngine:
                     )
                 elif regime == "range":
                     range_intent = get_range_intent(self.cfg.symbol, self.cfg.timeframe, self.cfg)
+                    if range_intent.reason in ("range_idle", "no_signal") and bool((range_intent.debug or {}).get("range_confirmed", False)):
+                        self.range_no_signal_count += 1
+                    else:
+                        self.range_no_signal_count = 0
+                    if self.range_no_signal_count > 20:
+                        regime = "dead"
+                        self.range_no_signal_count = 0
                     is_long = range_intent.direction == "long"
                     is_short = range_intent.direction == "short"
                     intent = TradeIntent(
@@ -944,17 +956,18 @@ class TradingEngine:
                     spread_penalty = 0 if spread_points < self.cfg.max_spread_points else 8
                     bad_session_penalty = 3 if features.get("session_name") in ("Asia",) else 0
                     side_penalty = 30 if side_inconsistent else 0
-                    raw_score = (
+                    context_score = max(-15, min(15, context_score))
+                    pattern_score = max(-15, min(15, pattern_score))
+                    strategy_edge_score = max(-20, min(20, strategy_edge_score))
+                    raw_score_pre = (
                         setup_score
                         + context_score
                         + pattern_score
                         + strategy_edge_score
                         + selector_bonus
-                        - spread_penalty
-                        - bad_session_penalty
-                        - side_penalty
                     )
-                    final_score = max(0, min(100, int(round(raw_score))))
+                    raw_score_final = raw_score_pre - spread_penalty - bad_session_penalty - side_penalty
+                    final_score = max(0, min(100, int(round(raw_score_final))))
                     confidence = int(final_score)
 
                     logging.info(
@@ -1015,7 +1028,7 @@ class TradingEngine:
                         decision = "skip_low_final_score"
                         reject_reason = "low_final_score"
                     logging.info(
-                        "LIVE_DECISION regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s spread_penalty=%s bad_session_penalty=%s raw_score=%s final_score=%s decision=%s context_reason=%s pattern_reason=%s strategy_edge_reason=%s",
+                        "LIVE_DECISION regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s spread_penalty=%s bad_session_penalty=%s side_penalty=%s raw_score_pre=%s raw_score_final=%s final_score=%s decision=%s context_reason=%s pattern_reason=%s strategy_edge_reason=%s",
                         regime,
                         intent.reason,
                         "long" if intent.is_long else "short",
@@ -1026,7 +1039,9 @@ class TradingEngine:
                         selector_bonus,
                         spread_penalty,
                         bad_session_penalty,
-                        raw_score,
+                        side_penalty,
+                        raw_score_pre,
+                        raw_score_final,
                         final_score,
                         decision,
                         context_reason,
