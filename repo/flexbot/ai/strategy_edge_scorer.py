@@ -36,18 +36,16 @@ class StrategyEdgeScorer:
         elif current_version:
             logging.warning("LEARNING_VERSION_MISMATCH table=strategy_edge_table expected=%s", current_version)
             return 0, "version_mismatch"
-        current_symbol = str(lookup.get("symbol", ""))
-        current_timeframe = str(lookup.get("timeframe", ""))
-        if "symbol" in self._cache.columns and current_symbol:
-            self._cache = self._cache[self._cache["symbol"] == current_symbol].copy()
-            if self._cache.empty:
-                return 0, "symbol_mismatch"
-        if "timeframe" in self._cache.columns and current_timeframe:
-            self._cache = self._cache[self._cache["timeframe"] == current_timeframe].copy()
-            if self._cache.empty:
-                return 0, "tf_mismatch"
-
         lk = dict(lookup)
+        current_symbol = str(lk.get("symbol", ""))
+        current_timeframe = str(lk.get("timeframe", ""))
+        df = self._cache.copy()
+        if "symbol" not in df.columns or "timeframe" not in df.columns or not current_symbol or not current_timeframe:
+            return 0, "no_data"
+        df = df[(df["symbol"] == current_symbol) & (df["timeframe"] == current_timeframe)]
+        if df.empty:
+            return 0, "no_data"
+
         lk["session_name"] = normalize_session_name(lk.get("session_name", ""))
         levels = [
             ("strategy_name", "regime", "side", "session_name", "timeframe"),
@@ -56,16 +54,16 @@ class StrategyEdgeScorer:
             ("strategy_name", "side"),
         ]
         for idx, keys in enumerate(levels, start=1):
-            mask = pd.Series(True, index=self._cache.index)
+            mask = pd.Series(True, index=df.index)
             for k in keys:
-                if k in self._cache.columns and k in lk:
-                    mask &= self._cache[k] == lk[k]
-            row = self._cache.loc[mask].sort_values("count", ascending=False).head(1)
+                if k in df.columns and k in lk:
+                    mask &= df[k] == lk[k]
+            row = df.loc[mask].sort_values("count", ascending=False).head(1)
             if row.empty:
                 continue
             count = int(row.iloc[0].get("count", 0))
             if count < int(min_samples):
-                continue
+                return 0, "low_samples"
             avg_r = float(row.iloc[0].get("avg_r", 0.0))
             raw = max(-20.0, min(20.0, avg_r * 25.0))
             confidence = min(1.0, count / max(int(min_samples) * 3, 1))

@@ -33,18 +33,16 @@ class ContextScorer:
         elif current_version:
             logging.warning("LEARNING_VERSION_MISMATCH table=context_edge_table expected=%s", current_version)
             return 0, "version_mismatch"
+        lookup = dict(lookup)
         current_symbol = str(lookup.get("symbol", ""))
         current_timeframe = str(lookup.get("timeframe", ""))
-        if "symbol" in self._cache.columns and current_symbol:
-            self._cache = self._cache[self._cache["symbol"] == current_symbol].copy()
-            if self._cache.empty:
-                return 0, "symbol_mismatch"
-        if "timeframe" in self._cache.columns and current_timeframe:
-            self._cache = self._cache[self._cache["timeframe"] == current_timeframe].copy()
-            if self._cache.empty:
-                return 0, "tf_mismatch"
+        df = self._cache.copy()
+        if "symbol" not in df.columns or "timeframe" not in df.columns or not current_symbol or not current_timeframe:
+            return 0, "no_data"
+        df = df[(df["symbol"] == current_symbol) & (df["timeframe"] == current_timeframe)]
+        if df.empty:
+            return 0, "no_data"
 
-        lookup = dict(lookup)
         lookup["session_name"] = normalize_session_name(lookup.get("session_name", ""))
         levels = [
             ("weekday", "hour", "session_name", "regime", "side", "timeframe"),
@@ -56,20 +54,22 @@ class ContextScorer:
             levels = [("strategy_name",) + l for l in levels] + levels
 
         for idx, keys in enumerate(levels, start=1):
-            mask = pd.Series(True, index=self._cache.index)
+            mask = pd.Series(True, index=df.index)
             for key in keys:
-                if key in lookup and key in self._cache.columns:
-                    mask &= self._cache[key] == lookup[key]
-            row = self._cache.loc[mask].sort_values("count", ascending=False).head(1)
+                if key in lookup and key in df.columns:
+                    mask &= df[key] == lookup[key]
+            row = df.loc[mask].sort_values("count", ascending=False).head(1)
             if row.empty:
                 continue
             count = int(row.iloc[0].get("count", 0))
             if count < int(min_samples):
-                continue
+                return 0, "low_samples"
             avg_r = float(row.iloc[0].get("avg_r", 0.0))
             raw = max(-15.0, min(15.0, avg_r * 20.0))
             confidence = min(1.0, count / max(int(min_samples) * 3, 1))
             score = int(round(raw * confidence * self.weight))
+            if count < int(min_samples) * 2:
+                score = int(round(score * 0.5))
             logging.info("CONTEXT_SCORE method=backoff_level_%s count=%s confidence=%.2f avg_r=%.4f score=%s", idx, count, confidence, avg_r, score)
             if score < 0:
                 logging.info("CONTEXT_SCORE_NEGATIVE count=%s avg_r=%.4f score=%s reason=context_penalty", count, avg_r, score)

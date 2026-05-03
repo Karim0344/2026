@@ -134,6 +134,8 @@ class TradingEngine:
         )
         self.last_signal_ts: float = 0.0
         self.range_no_signal_count: int = 0
+        self.recent_performance: dict[str, list[float]] = {}
+        self.recent_loss_streak: int = 0
 
     def start(self):
         mt5_initialize_started = False
@@ -244,6 +246,14 @@ class TradingEngine:
                 logging.warning(
                     f"CONSEC_LOSS_STOP triggered losses={self.consec_losses}"
                 )
+            self.trading_disabled_today = True
+        if self.recent_loss_streak >= int(getattr(self.cfg, "recent_loss_streak_limit", 5)):
+            if not self.trading_disabled_today:
+                logging.warning("RECENT_LOSS_STREAK_STOP streak=%s", self.recent_loss_streak)
+            self.trading_disabled_today = True
+        if dd <= -(float(getattr(self.cfg, "max_drawdown_pct", 3.0)) / 100.0):
+            if not self.trading_disabled_today:
+                logging.warning("MAX_DRAWDOWN_STOP dd=%.4f", dd)
             self.trading_disabled_today = True
         self._performance_guard()
 
@@ -623,10 +633,20 @@ class TradingEngine:
                     bar_high=bar_high,
                     bar_low=bar_low,
                     same_bar_priority=str(getattr(self.cfg, "same_bar_priority", "conservative")),
+                    spread_cost=float(getattr(self.cfg, "learning_spread_cost_points", 0)) * float(getattr(self.cfg, "learning_point_size", 0.01)),
                 )
                 for trade in updates:
                     if trade.status != "open":
                         rr_realized = float(getattr(trade, "result_r", 0.0))
+                        strategy_key = str(getattr(trade, "signal_reason", "other") or "other")
+                        runs = self.recent_performance.setdefault(strategy_key, [])
+                        runs.append(rr_realized)
+                        if len(runs) > 20:
+                            del runs[0]
+                        if rr_realized < 0:
+                            self.recent_loss_streak += 1
+                        elif rr_realized > 0:
+                            self.recent_loss_streak = 0
                         log_trade_close(
                             trade=trade,
                             result_r=rr_realized,
@@ -967,9 +987,15 @@ class TradingEngine:
                     pattern_score = max(-15, min(15, pattern_score))
                     strategy_edge_score = max(-20, min(20, strategy_edge_score))
                     weighted_setup = setup_score * float(getattr(self.cfg, "weight_setup", 1.0))
-                    weighted_context = context_score * float(getattr(self.cfg, "weight_context", 0.7))
-                    weighted_pattern = pattern_score * float(getattr(self.cfg, "weight_pattern", 0.7))
+                    weighted_context = context_score * float(getattr(self.cfg, "weight_context", 0.6))
+                    weighted_pattern = pattern_score * float(getattr(self.cfg, "weight_pattern", 0.6))
                     weighted_strategy = strategy_edge_score * float(getattr(self.cfg, "weight_strategy", 0.8))
+                    runtime_penalty = 0
+                    strategy_runs = self.recent_performance.get(str(intent.reason), [])
+                    if strategy_runs:
+                        recent_avg_r = sum(strategy_runs) / max(len(strategy_runs), 1)
+                        if recent_avg_r < -0.3:
+                            runtime_penalty = 5
                     raw_score_pre = (
                         weighted_setup
                         + weighted_context
@@ -977,7 +1003,7 @@ class TradingEngine:
                         + weighted_strategy
                         + selector_bonus
                     )
-                    raw_score_final = raw_score_pre - spread_penalty - bad_session_penalty - side_penalty - no_data_penalty
+                    raw_score_final = raw_score_pre - spread_penalty - bad_session_penalty - side_penalty - no_data_penalty - runtime_penalty
                     final_score = max(0, min(100, int(round(raw_score_final))))
                     confidence = int(final_score)
 
