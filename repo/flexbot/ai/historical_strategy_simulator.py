@@ -5,22 +5,25 @@ import pandas as pd
 
 def _strategy_from_row(row: pd.Series) -> str | None:
     reg = str(row.get("regime", ""))
-    side = str(row.get("side", "")).lower()
-    trend_ok = bool(row.get("trend_ok", False))
-    pullback = bool(row.get("pullback", False))
-    momentum = bool(row.get("momentum", False))
-    breakout = bool(row.get("breakout", False))
+    trend_ok_long = bool(row.get("trend_ok_long", False))
+    trend_ok_short = bool(row.get("trend_ok_short", False))
+    pullback_ok_long = bool(row.get("pullback_ok_long", False))
+    pullback_ok_short = bool(row.get("pullback_ok_short", False))
+    bullish_close = bool(row.get("bullish_close", False))
+    bearish_close = bool(row.get("bearish_close", False))
+    breakout_ok_long = bool(row.get("breakout_ok_long", False))
+    breakout_ok_short = bool(row.get("breakout_ok_short", False))
 
     if reg.startswith("range"):
-        if side == "long" and bool(row.get("rising_lows", False)) and bool(row.get("three_candle_reversal", False)):
+        if bool(row.get("rising_lows", False)) and bool(row.get("three_candle_reversal", False)):
             return "RANGE_LONG"
-        if side == "short" and bool(row.get("falling_highs", False)) and bool(row.get("breakout_pressure_up", False)):
+        if bool(row.get("falling_highs", False)) and bool(row.get("breakout_pressure_down", False)):
             return "RANGE_SHORT"
         return None
 
-    if side == "long" and trend_ok and pullback and momentum and breakout:
+    if trend_ok_long and pullback_ok_long and bullish_close and breakout_ok_long:
         return "PRO_LONG"
-    if side == "short" and trend_ok and pullback and momentum and breakout:
+    if trend_ok_short and pullback_ok_short and bearish_close and breakout_ok_short:
         return "PRO_SHORT"
     return None
 
@@ -33,6 +36,14 @@ def build_strategy_edge_table(df: pd.DataFrame, min_samples: int = 20) -> pd.Dat
     simulated = simulated[simulated["strategy_name"].notna()].copy()
     if simulated.empty:
         return pd.DataFrame()
+    simulated["side"] = simulated["strategy_name"].map(
+        {
+            "PRO_LONG": "long",
+            "RANGE_LONG": "long",
+            "PRO_SHORT": "short",
+            "RANGE_SHORT": "short",
+        }
+    )
     grouped = simulated.groupby(["strategy_name", "regime", "side", "session_name", "timeframe"], dropna=False).agg(
         count=("result_r", "size"),
         winrate=("result_r", lambda s: (s.gt(0).mean() * 100.0)),

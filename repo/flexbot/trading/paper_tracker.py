@@ -254,7 +254,7 @@ def _weighted_result_r(trade: PaperTrade, exit_reason: str) -> float:
     return round(rr, 4)
 
 
-def _update_trade_with_bar(trade: PaperTrade, bar_time: int, bar_high: float, bar_low: float) -> tuple[PaperTrade, bool]:
+def _update_trade_with_bar(trade: PaperTrade, bar_time: int, bar_high: float, bar_low: float, same_bar_priority: str = "conservative") -> tuple[PaperTrade, bool]:
     if trade.status != "open":
         return trade, False
     changed = False
@@ -272,7 +272,18 @@ def _update_trade_with_bar(trade: PaperTrade, bar_time: int, bar_high: float, ba
         if bar_high >= trade.tp2 and not trade.tp2_hit:
             trade.tp2_hit = True
             changed = True
-        if bar_high >= trade.tp3:
+        tp3_hit = bar_high >= trade.tp3
+        sl_hit = bar_low <= trade.sl
+        if tp3_hit and sl_hit and same_bar_priority == "skip_ambiguous":
+            return trade, changed
+        if tp3_hit and sl_hit and same_bar_priority == "conservative":
+            trade.sl_hit = True
+            trade.status = "sl_hit"
+            trade.exit_reason = "SL"
+            trade.result_r = _weighted_result_r(trade, "SL")
+            trade.closed_bar_time = bar_time
+            return trade, True
+        if tp3_hit:
             trade.tp1_hit = True
             trade.tp2_hit = True
             trade.tp3_hit = True
@@ -281,7 +292,7 @@ def _update_trade_with_bar(trade: PaperTrade, bar_time: int, bar_high: float, ba
             trade.result_r = _weighted_result_r(trade, "TP3")
             trade.closed_bar_time = bar_time
             return trade, True
-        if bar_low <= trade.sl:
+        if sl_hit:
             trade.sl_hit = True
             trade.status = "sl_hit"
             trade.exit_reason = "SL"
@@ -295,7 +306,18 @@ def _update_trade_with_bar(trade: PaperTrade, bar_time: int, bar_high: float, ba
         if bar_low <= trade.tp2 and not trade.tp2_hit:
             trade.tp2_hit = True
             changed = True
-        if bar_low <= trade.tp3:
+        tp3_hit = bar_low <= trade.tp3
+        sl_hit = bar_high >= trade.sl
+        if tp3_hit and sl_hit and same_bar_priority == "skip_ambiguous":
+            return trade, changed
+        if tp3_hit and sl_hit and same_bar_priority == "conservative":
+            trade.sl_hit = True
+            trade.status = "sl_hit"
+            trade.exit_reason = "SL"
+            trade.result_r = _weighted_result_r(trade, "SL")
+            trade.closed_bar_time = bar_time
+            return trade, True
+        if tp3_hit:
             trade.tp1_hit = True
             trade.tp2_hit = True
             trade.tp3_hit = True
@@ -304,7 +326,7 @@ def _update_trade_with_bar(trade: PaperTrade, bar_time: int, bar_high: float, ba
             trade.result_r = _weighted_result_r(trade, "TP3")
             trade.closed_bar_time = bar_time
             return trade, True
-        if bar_high >= trade.sl:
+        if sl_hit:
             trade.sl_hit = True
             trade.status = "sl_hit"
             trade.exit_reason = "SL"
@@ -315,14 +337,14 @@ def _update_trade_with_bar(trade: PaperTrade, bar_time: int, bar_high: float, ba
     return trade, changed
 
 
-def update_open_paper_trades(symbol: str, timeframe: str, bar_time: int, bar_high: float, bar_low: float, path: str = "paper_trades.json") -> list[PaperTrade]:
+def update_open_paper_trades(symbol: str, timeframe: str, bar_time: int, bar_high: float, bar_low: float, path: str = "paper_trades.json", same_bar_priority: str = "conservative") -> list[PaperTrade]:
     trades = load_paper_trades(path)
     changed = False
     updates: list[PaperTrade] = []
     for idx, trade in enumerate(trades):
         if trade.symbol != symbol or trade.timeframe != timeframe:
             continue
-        updated, was_changed = _update_trade_with_bar(trade, bar_time, bar_high, bar_low)
+        updated, was_changed = _update_trade_with_bar(trade, bar_time, bar_high, bar_low, same_bar_priority=same_bar_priority)
         if was_changed:
             trades[idx] = updated
             updates.append(updated)

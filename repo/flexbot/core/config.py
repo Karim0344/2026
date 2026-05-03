@@ -63,7 +63,9 @@ class BotConfig:
     learning_slippage_points: int = 5
     learning_point_size: float = 0.01
     block_side_inconsistent_features: bool = True
-    learning_pipeline_mode: str = "startup"  # startup/manual/background
+    learning_pipeline_mode: str = "manual"  # startup/manual/background
+    learning_horizon_bars: int = 20
+    same_bar_priority: str = "conservative"  # conservative/optimistic/skip_ambiguous
 
     store_history_path: str = "data/history"
     store_learning_path: str = "data/learned"
