@@ -3,7 +3,17 @@ from __future__ import annotations
 import pandas as pd
 
 
-def label_outcomes(df: pd.DataFrame, horizon_bars: int = 20, risk_atr_mult: float = 1.0, spread_cost_points: int = 10, slippage_points: int = 5, point_size: float = 0.01) -> pd.DataFrame:
+def _weighted_result_r(tp1_hit: bool, tp2_hit: bool, tp3_hit: bool, exit_reason: str, tp1_r: float, tp2_r: float, tp3_r: float, tp1_size_ratio: float, tp2_size_ratio: float, tp3_size_ratio: float) -> float:
+    reached = [tp1_hit, tp2_hit, tp3_hit]
+    if exit_reason == "TP3":
+        reached = [True, True, True]
+    rr = 0.0
+    for ratio, hit, lvl_r in zip((tp1_size_ratio, tp2_size_ratio, tp3_size_ratio), reached, (tp1_r, tp2_r, tp3_r)):
+        rr += ratio * (lvl_r if hit else -1.0)
+    return rr
+
+
+def label_outcomes(df: pd.DataFrame, horizon_bars: int = 20, risk_atr_mult: float = 1.0, spread_cost_points: int = 10, slippage_points: int = 5, point_size: float = 0.01, tp1_r_multiple: float = 1.0, tp2_r_multiple: float = 2.2, tp3_r_multiple: float = 3.2, tp1_size_ratio: float = 0.30, tp2_size_ratio: float = 0.35, tp3_size_ratio: float = 0.35, same_bar_priority: str = "conservative") -> pd.DataFrame:
     if df.empty:
         return df.copy()
 
@@ -46,19 +56,21 @@ def label_outcomes(df: pd.DataFrame, horizon_bars: int = 20, risk_atr_mult: floa
         down_r = (window_low - entry) / r
         mfe.append(up_r)
         mae.append(down_r)
-        long_tp1 = entry + (1.0 * r)
-        long_tp2 = entry + (2.0 * r)
-        long_tp3 = entry + (3.0 * r)
+        long_tp1 = entry + (tp1_r_multiple * r)
+        long_tp2 = entry + (tp2_r_multiple * r)
+        long_tp3 = entry + (tp3_r_multiple * r)
         long_sl = entry - (1.0 * r)
-        short_tp1 = entry - (1.0 * r)
-        short_tp2 = entry - (2.0 * r)
-        short_tp3 = entry - (3.0 * r)
+        short_tp1 = entry - (tp1_r_multiple * r)
+        short_tp2 = entry - (tp2_r_multiple * r)
+        short_tp3 = entry - (tp3_r_multiple * r)
         short_sl = entry + (1.0 * r)
 
         long_exit = "timeout"
         short_exit = "timeout"
-        long_r = (closes[end - 1] - entry) / r if end - 1 >= i else 0.0
-        short_r = (entry - closes[end - 1]) / r if end - 1 >= i else 0.0
+        long_tp1_hit = False
+        long_tp2_hit = False
+        short_tp1_hit = False
+        short_tp2_hit = False
         long_bars = max(0, end - i - 1)
         short_bars = max(0, end - i - 1)
 
@@ -70,39 +82,43 @@ def label_outcomes(df: pd.DataFrame, horizon_bars: int = 20, risk_atr_mult: floa
             lo = lows[idx]
 
             if long_exit == "timeout":
-                if lo <= long_sl:
+                if hi >= long_tp1:
+                    long_tp1_hit = True
+                if hi >= long_tp2:
+                    long_tp2_hit = True
+                long_tp_hit = hi >= long_tp3
+                long_sl_hit = lo <= long_sl
+                if long_tp_hit and long_sl_hit and same_bar_priority == "skip_ambiguous":
+                    long_exit = "AMBIGUOUS_SKIP"
+                    long_bars = offset
+                if long_tp_hit and long_sl_hit and same_bar_priority == "conservative":
                     long_exit = "SL"
-                    long_r = -1.0
                     long_bars = offset
-                elif hi >= long_tp3:
+                elif long_tp_hit:
                     long_exit = "TP3"
-                    long_r = 3.0
                     long_bars = offset
-                elif hi >= long_tp2:
-                    long_exit = "TP2"
-                    long_r = 2.0
-                    long_bars = offset
-                elif hi >= long_tp1:
-                    long_exit = "TP1"
-                    long_r = 1.0
+                elif long_sl_hit:
+                    long_exit = "SL"
                     long_bars = offset
 
             if short_exit == "timeout":
-                if hi >= short_sl:
+                if lo <= short_tp1:
+                    short_tp1_hit = True
+                if lo <= short_tp2:
+                    short_tp2_hit = True
+                short_tp_hit = lo <= short_tp3
+                short_sl_hit = hi >= short_sl
+                if short_tp_hit and short_sl_hit and same_bar_priority == "skip_ambiguous":
+                    short_exit = "AMBIGUOUS_SKIP"
+                    short_bars = offset
+                if short_tp_hit and short_sl_hit and same_bar_priority == "conservative":
                     short_exit = "SL"
-                    short_r = -1.0
                     short_bars = offset
-                elif lo <= short_tp3:
+                elif short_tp_hit:
                     short_exit = "TP3"
-                    short_r = 3.0
                     short_bars = offset
-                elif lo <= short_tp2:
-                    short_exit = "TP2"
-                    short_r = 2.0
-                    short_bars = offset
-                elif lo <= short_tp1:
-                    short_exit = "TP1"
-                    short_r = 1.0
+                elif short_sl_hit:
+                    short_exit = "SL"
                     short_bars = offset
 
             if long_exit != "timeout" and short_exit != "timeout":
@@ -111,7 +127,16 @@ def label_outcomes(df: pd.DataFrame, horizon_bars: int = 20, risk_atr_mult: floa
         side = side_series.iloc[i]
         is_short = side == "short"
         selected_exit = short_exit if is_short else long_exit
-        selected_r = short_r if is_short else long_r
+        tp1_hit_flag = False
+        tp2_hit_flag = False
+        tp3_hit_flag = selected_exit == "TP3"
+        if is_short:
+            tp1_hit_flag = short_tp1_hit or tp3_hit_flag
+            tp2_hit_flag = short_tp2_hit or tp3_hit_flag
+        else:
+            tp1_hit_flag = long_tp1_hit or tp3_hit_flag
+            tp2_hit_flag = long_tp2_hit or tp3_hit_flag
+        selected_r = _weighted_result_r(tp1_hit_flag, tp2_hit_flag, tp3_hit_flag, selected_exit, tp1_r_multiple, tp2_r_multiple, tp3_r_multiple, tp1_size_ratio, tp2_size_ratio, tp3_size_ratio)
         cost_price = (spread_cost_points + slippage_points) * float(point_size)
         cost_r = cost_price / max(r, 1e-6)
         selected_r = selected_r - cost_r
@@ -123,9 +148,9 @@ def label_outcomes(df: pd.DataFrame, horizon_bars: int = 20, risk_atr_mult: floa
         bars_to_outcome.append(selected_bars)
         first_exit.append(selected_exit)
         first_exit_side.append("short" if is_short else "long")
-        tp1.append(selected_exit == "TP1")
-        tp2.append(selected_exit == "TP2")
-        tp3.append(selected_exit == "TP3")
+        tp1.append(tp1_hit_flag)
+        tp2.append(tp2_hit_flag)
+        tp3.append(tp3_hit_flag)
         sl.append(selected_exit == "SL")
         mfe[-1] = selected_up_r
         mae[-1] = selected_down_r

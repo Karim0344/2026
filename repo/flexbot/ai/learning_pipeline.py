@@ -79,11 +79,7 @@ class LearningPipeline:
                 timeframe=tf,
             )
             built["regime"] = self._infer_regime(built)
-            built["side"] = built.apply(
-                lambda r: "long" if float(r.get("close", 0.0)) >= float(r.get("open", 0.0)) else "short",
-                axis=1,
-            )
-            features_frames.append(built)
+            features_frames.append(self._expand_directions(built))
 
         features_df = (
             pd.concat(features_frames, ignore_index=True).sort_values("time").reset_index(drop=True)
@@ -93,7 +89,20 @@ class LearningPipeline:
         features_path = self._save_learning_frame(features_df, "features")
         logging.info("FEATURES_BUILT rows=%s path=%s", len(features_df), features_path)
 
-        outcomes_df = label_outcomes(features_df, spread_cost_points=self.cfg.learning_spread_cost_points, slippage_points=self.cfg.learning_slippage_points, point_size=self.cfg.learning_point_size)
+        outcomes_df = label_outcomes(
+            features_df,
+            horizon_bars=self.cfg.learning_horizon_bars,
+            spread_cost_points=self.cfg.learning_spread_cost_points,
+            slippage_points=self.cfg.learning_slippage_points,
+            point_size=self.cfg.learning_point_size,
+            tp1_r_multiple=self.cfg.tp1_r_multiple,
+            tp2_r_multiple=self.cfg.tp2_r_multiple,
+            tp3_r_multiple=self.cfg.tp3_r_multiple,
+            tp1_size_ratio=self.cfg.tp1_size_ratio,
+            tp2_size_ratio=self.cfg.tp2_size_ratio,
+            tp3_size_ratio=self.cfg.tp3_size_ratio,
+            same_bar_priority=self.cfg.same_bar_priority,
+        )
         outcomes_path = self._save_learning_frame(outcomes_df, "outcomes")
         logging.info("OUTCOMES_LABELED rows=%s path=%s", len(outcomes_df), outcomes_path)
 
@@ -143,6 +152,14 @@ class LearningPipeline:
             if tf not in out:
                 out.append(tf)
         return out
+
+    @staticmethod
+    def _expand_directions(df: pd.DataFrame) -> pd.DataFrame:
+        long_df = df.copy()
+        long_df["side"] = "long"
+        short_df = df.copy()
+        short_df["side"] = "short"
+        return pd.concat([long_df, short_df], ignore_index=True)
 
     @staticmethod
     def _infer_regime(df: pd.DataFrame) -> pd.Series:

@@ -62,12 +62,28 @@ def build_features(df: pd.DataFrame, strategy_name: str, symbol: str, timeframe:
 
     out["higher_high"] = out["high"] > out["high"].shift(1)
     out["lower_low"] = out["low"] < out["low"].shift(1)
+    out["previous_high"] = out["high"].shift(1)
+    out["previous_low"] = out["low"].shift(1)
     out["rising_lows"] = (out["low"] > out["low"].shift(1)) & (out["low"].shift(1) > out["low"].shift(2))
     out["falling_highs"] = (out["high"] < out["high"].shift(1)) & (out["high"].shift(1) < out["high"].shift(2))
     out["breakout_pressure_up"] = out["rising_lows"] & out["compression_flag"]
     out["breakout_pressure_down"] = out["falling_highs"] & out["compression_flag"]
     out["three_candle_breakout"] = out["close"] > out["high"].shift(1).rolling(2).max()
     out["three_candle_reversal"] = out["bullish"] & out["bearish"].shift(1) & out["bearish"].shift(2)
+    out["trend_ok_long"] = out["close"] > slow_ma
+    out["trend_ok_short"] = out["close"] < slow_ma
+    out["htf_ok_long"] = out["distance_to_ma_fast"] > 0
+    out["htf_ok_short"] = out["distance_to_ma_fast"] < 0
+    out["pullback_ok_long"] = out["low"] <= (fast_ma + (atr * 0.35))
+    out["pullback_ok_short"] = out["high"] >= (fast_ma - (atr * 0.35))
+    out["bullish_close"] = out["close"] > out["open"]
+    out["bearish_close"] = out["close"] < out["open"]
+    out["breakout_ok_long"] = out["high"] > out["previous_high"]
+    out["breakout_ok_short"] = out["low"] < out["previous_low"]
+    out["trend_ok"] = out["trend_ok_long"] | out["trend_ok_short"]
+    out["pullback"] = out["pullback_ok_long"] | out["pullback_ok_short"]
+    out["momentum"] = out["bullish_close"] | out["bearish_close"]
+    out["breakout"] = out["breakout_ok_long"] | out["breakout_ok_short"]
 
     out["strategy_name"] = strategy_name
     out["symbol"] = symbol
@@ -89,4 +105,3 @@ def _atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     low_close = (df["low"] - df["close"].shift(1)).abs()
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     return tr.rolling(period, min_periods=max(2, period // 2)).mean().fillna(0)
-

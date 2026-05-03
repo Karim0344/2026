@@ -81,5 +81,10 @@
   "enable_strategy_edge_table": true,
   "strategy_edge_weight": 1.0,
   "learning_spread_cost_points": 10,
-  "learning_slippage_points": 5
+  "learning_slippage_points": 5,
+  "learning_point_size": 0.01,
+  "block_side_inconsistent_features": true,
+  "learning_pipeline_mode": "manual",
+  "same_bar_priority": "conservative",
+  "learning_horizon_bars": 20
 }

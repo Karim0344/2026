@@ -148,7 +148,7 @@ class TradingEngine:
                 "ENGINE_MT5_READY terminal=%s symbol=%s", terminal, self.cfg.symbol
             )
             self._reset_day_if_needed(force=True)
-            if getattr(self.cfg, "learning_pipeline_mode", "startup") == "startup":
+            if getattr(self.cfg, "learning_pipeline_mode", "manual") == "startup":
                 self._refresh_learning_tables_if_needed(force=True)
 
             self.stop_event.clear()
@@ -497,7 +497,7 @@ class TradingEngine:
                 self.loop_checks += 1
                 self.status.loop_checks = self.loop_checks
                 self._update_guards()
-                if getattr(self.cfg, "learning_pipeline_mode", "startup") == "background":
+                if getattr(self.cfg, "learning_pipeline_mode", "manual") == "background":
                     self._refresh_learning_tables_if_needed()
                 can_enter, guard_reason = self._can_enter()
                 if not can_enter:
@@ -567,6 +567,7 @@ class TradingEngine:
                     bar_time=closed_bar_time,
                     bar_high=bar_high,
                     bar_low=bar_low,
+                    same_bar_priority=str(getattr(self.cfg, "same_bar_priority", "conservative")),
                 )
                 for trade in updates:
                     if trade.status in ("sl_hit", "tp1_hit", "tp2_hit", "tp3_hit"):
@@ -810,7 +811,7 @@ class TradingEngine:
                             features.get("htf_ok"),
                         )
                     side_inconsistent = not features.get("feature_side_consistent", True)
-                    if side_inconsistent and bool(getattr(self.cfg, "block_side_inconsistent_features", True)) and not self.cfg.paper_mode:
+                    if side_inconsistent and bool(getattr(self.cfg, "block_side_inconsistent_features", True)):
                         self.status.last_msg = "side_inconsistent_features"
                         self._log_strategy_reason_change(self.status.last_msg)
                         continue
@@ -1011,15 +1012,19 @@ class TradingEngine:
                         tp2 = 0.0
                         tp3 = 0.0
                         tick = client.get_tick(self.cfg.symbol)
-                        if tick is not None:
-                            entry = float(tick.ask if intent.is_long else tick.bid)
-                            r_value = abs(entry - float(intent.sl))
-                            if r_value > 0:
-                                tp1 = entry + (float(self.cfg.tp1_r_multiple) * r_value) if intent.is_long else entry - (float(self.cfg.tp1_r_multiple) * r_value)
-                                tp2 = entry + (float(self.cfg.tp2_r_multiple) * r_value) if intent.is_long else entry - (float(self.cfg.tp2_r_multiple) * r_value)
-                                tp3 = entry + (float(self.cfg.tp3_r_multiple) * r_value) if intent.is_long else entry - (float(self.cfg.tp3_r_multiple) * r_value)
+                        if tick is None:
+                            self.status.last_msg = "tick_missing"
+                            self._log_strategy_reason_change(self.status.last_msg)
+                            logging.info("LIVE_DECISION decision=tick_missing final_score=%s min_required=%s", final_score, min_required)
+                            continue
+                        entry = float(tick.ask if intent.is_long else tick.bid)
+                        r_value = abs(entry - float(intent.sl))
+                        if r_value > 0:
+                            tp1 = entry + (float(self.cfg.tp1_r_multiple) * r_value) if intent.is_long else entry - (float(self.cfg.tp1_r_multiple) * r_value)
+                            tp2 = entry + (float(self.cfg.tp2_r_multiple) * r_value) if intent.is_long else entry - (float(self.cfg.tp2_r_multiple) * r_value)
+                            tp3 = entry + (float(self.cfg.tp3_r_multiple) * r_value) if intent.is_long else entry - (float(self.cfg.tp3_r_multiple) * r_value)
 
-                            trade = PaperTrade(
+                        trade = PaperTrade(
                                 batch_id=intent.batch_id,
                                 symbol=self.cfg.symbol,
                                 timeframe=self.cfg.timeframe,
@@ -1038,17 +1043,17 @@ class TradingEngine:
                                 run_start_time=self.run_started_at.isoformat(),
                                 build_version=self.build_version,
                             )
-                            trade.tp1_size_ratio = float(self.cfg.tp1_size_ratio)
-                            trade.tp2_size_ratio = float(self.cfg.tp2_size_ratio)
-                            trade.tp3_size_ratio = float(self.cfg.tp3_size_ratio)
-                            upsert_paper_trade(trade)
-                            self.signal_count += 1
-                            self.status.signal_count = self.signal_count
-                            self.last_signal_ts = now_ts
-                            self.last_batch_id = intent.batch_id
-                            logging.info("SIGNAL_COUNT=%s day=%s", self.signal_count, self.current_day)
-                            log_trade_open(trade=trade, path=self.cfg.ai_memory_path)
-                            self._refresh_paper_stats()
+                        trade.tp1_size_ratio = float(self.cfg.tp1_size_ratio)
+                        trade.tp2_size_ratio = float(self.cfg.tp2_size_ratio)
+                        trade.tp3_size_ratio = float(self.cfg.tp3_size_ratio)
+                        upsert_paper_trade(trade)
+                        self.signal_count += 1
+                        self.status.signal_count = self.signal_count
+                        self.last_signal_ts = now_ts
+                        self.last_batch_id = intent.batch_id
+                        logging.info("SIGNAL_COUNT=%s day=%s", self.signal_count, self.current_day)
+                        log_trade_open(trade=trade, path=self.cfg.ai_memory_path)
+                        self._refresh_paper_stats()
 
                         logging.info(
                             "PAPER_SIGNAL run_id=%s strategy=%s side=%s entry=%.5f sl=%.5f tp1=%.5f tp2=%.5f tp3=%.5f final_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s",
