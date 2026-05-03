@@ -25,6 +25,8 @@ class StrategyEdgeScorer:
             self.refresh()
         if self._cache is None or self._cache.empty:
             return 0, "strategy_table_missing"
+        if "learning_version" not in self._cache.columns:
+            logging.warning("LEARNING_VERSION_TODO table=strategy_edge_table status=missing_column")
 
         lk = dict(lookup)
         lk["session_name"] = normalize_session_name(lk.get("session_name", ""))
@@ -47,8 +49,11 @@ class StrategyEdgeScorer:
                 continue
             avg_r = float(row.iloc[0].get("avg_r", 0.0))
             raw = max(-20.0, min(20.0, avg_r * 25.0))
-            score = int(round(raw * self.weight))
-            logging.info("STRATEGY_EDGE_SCORE method=backoff_level_%s count=%s avg_r=%.4f score=%s", idx, count, avg_r, score)
+            confidence = min(1.0, count / max(int(min_samples) * 3, 1))
+            score = int(round(raw * confidence * self.weight))
+            if count < int(min_samples) * 2:
+                score = int(round(score * 0.5))
+            logging.info("STRATEGY_EDGE_SCORE method=backoff_level_%s count=%s confidence=%.2f avg_r=%.4f score=%s", idx, count, confidence, avg_r, score)
             if score < 0:
                 logging.info("STRATEGY_EDGE_SCORE_NEGATIVE count=%s avg_r=%.4f score=%s reason=strategy_penalty", count, avg_r, score)
             return score, f"strategy_backoff_match_{idx}"

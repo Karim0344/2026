@@ -330,7 +330,7 @@ class TradingEngine:
         setup_score = int(round(base_confidence * float(self.cfg.setup_score_weight)))
         context_score, _ = (0, "context_disabled")
         if self.cfg.enable_statistical_learning and self.cfg.enable_context_score:
-            context_score, _ = self.context_scorer.score(lookup=features, min_samples=self.cfg.strategy_edge_min_samples)
+            context_score, _ = self.context_scorer.score(lookup=features, min_samples=self.cfg.min_samples_context)
         pattern_score, _ = (0, "pattern_disabled")
         if self.cfg.enable_pattern_learning and self.cfg.enable_pattern_score:
             pattern_score, _ = self.pattern_scorer.score(lookup=features, min_samples=self.cfg.min_samples_pattern)
@@ -338,10 +338,11 @@ class TradingEngine:
         if self.cfg.enable_strategy_edge_table:
             strategy_edge_score, _ = self.strategy_edge_scorer.score(lookup=features, min_samples=self.cfg.strategy_edge_min_samples)
         selector_bonus = 0
-        final_score = int(round(setup_score + context_score + pattern_score + strategy_edge_score + selector_bonus))
+        raw_score = setup_score + context_score + pattern_score + strategy_edge_score + selector_bonus
+        final_score = max(0, min(100, int(round(raw_score))))
         logging.info(
-            "CANDIDATE_EVAL symbol=%s tf=%s regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s final_score=%s decision=%s reject_reason=%s",
-            self.cfg.symbol, self.cfg.timeframe, regime, intent.reason, side, setup_score, context_score, pattern_score, strategy_edge_score, selector_bonus, final_score, decision, reject_reason,
+            "CANDIDATE_EVAL stage=%s symbol=%s tf=%s regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s raw_score=%s final_score=%s decision=%s reject_reason=%s",
+            ("pre_filter" if str(decision).startswith("skip_") else "final_decision"), self.cfg.symbol, self.cfg.timeframe, regime, intent.reason, side, setup_score, context_score, pattern_score, strategy_edge_score, selector_bonus, raw_score, final_score, decision, reject_reason,
         )
 
     def _spread_ok(self) -> bool:
@@ -795,7 +796,7 @@ class TradingEngine:
                     if self.cfg.enable_statistical_learning and self.cfg.enable_context_score:
                         context_score, context_reason = self.context_scorer.score(
                             lookup=candidate_features,
-                            min_samples=self.cfg.strategy_edge_min_samples,
+                            min_samples=self.cfg.min_samples_context,
                         )
                     pattern_score, pattern_reason = (0, "pattern_disabled")
                     if self.cfg.enable_pattern_learning and self.cfg.enable_pattern_score:
@@ -915,7 +916,7 @@ class TradingEngine:
                     if self.cfg.enable_statistical_learning and self.cfg.enable_context_score:
                         context_score, context_reason = self.context_scorer.score(
                             lookup=features,
-                            min_samples=self.cfg.strategy_edge_min_samples,
+                            min_samples=self.cfg.min_samples_context,
                         )
 
                     pattern_score = 0
@@ -936,20 +937,17 @@ class TradingEngine:
                     spread_penalty = 0 if spread_points < self.cfg.max_spread_points else 8
                     bad_session_penalty = 3 if features.get("session_name") in ("Asia",) else 0
                     side_penalty = 30 if side_inconsistent else 0
-                    final_score = max(
-                        0,
-                        min(
-                            100,
-                            setup_score
-                            + context_score
-                            + pattern_score
-                            + strategy_edge_score
-                            + selector_bonus
-                            - spread_penalty
-                            - bad_session_penalty
-                            - side_penalty,
-                        ),
+                    raw_score = (
+                        setup_score
+                        + context_score
+                        + pattern_score
+                        + strategy_edge_score
+                        + selector_bonus
+                        - spread_penalty
+                        - bad_session_penalty
+                        - side_penalty
                     )
+                    final_score = max(0, min(100, int(round(raw_score))))
                     confidence = int(final_score)
 
                     logging.info(
@@ -1010,7 +1008,7 @@ class TradingEngine:
                         decision = "skip_low_final_score"
                         reject_reason = "low_final_score"
                     logging.info(
-                        "LIVE_DECISION regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s spread_penalty=%s bad_session_penalty=%s final_score=%s decision=%s context_reason=%s pattern_reason=%s strategy_edge_reason=%s",
+                        "LIVE_DECISION regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s spread_penalty=%s bad_session_penalty=%s raw_score=%s final_score=%s decision=%s context_reason=%s pattern_reason=%s strategy_edge_reason=%s",
                         regime,
                         intent.reason,
                         "long" if intent.is_long else "short",
@@ -1021,6 +1019,7 @@ class TradingEngine:
                         selector_bonus,
                         spread_penalty,
                         bad_session_penalty,
+                        raw_score,
                         final_score,
                         decision,
                         context_reason,
