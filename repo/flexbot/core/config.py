@@ -60,8 +60,8 @@ class BotConfig:
     enable_strategy_edge_table: bool = True
     strategy_edge_weight: float = 1.0
     weight_setup: float = 1.0
-    weight_context: float = 0.7
-    weight_pattern: float = 0.7
+    weight_context: float = 0.6
+    weight_pattern: float = 0.6
     weight_strategy: float = 0.8
     learning_spread_cost_points: int = 10
     learning_slippage_points: int = 5
@@ -72,6 +72,8 @@ class BotConfig:
     same_bar_priority: str = "conservative"  # conservative/optimistic/skip_ambiguous
     learning_timeout_policy: str = "mark_to_market"  # mark_to_market/breakeven/skip
     strategy_edge_min_samples: int = 20
+    max_drawdown_pct: float = 3.0
+    recent_loss_streak_limit: int = 5
 
     store_history_path: str = "data/history"
     store_learning_path: str = "data/learned"

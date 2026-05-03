@@ -250,21 +250,26 @@ def load_paper_stats(stats_path: str = "paper_stats.json", run_id: str | None = 
         return _empty_stats()
 
 
-def _weighted_result_r(trade: PaperTrade, exit_reason: str) -> float:
+def _weighted_result_r(trade: PaperTrade, exit_reason: str, spread_cost: float = 0.0) -> float:
     ratios = (
         float(getattr(trade, "tp1_size_ratio", 0.30) or 0.30),
         float(getattr(trade, "tp2_size_ratio", 0.35) or 0.35),
         float(getattr(trade, "tp3_size_ratio", 0.35) or 0.35),
     )
-    tp1_r = (trade.tp1 - trade.entry) / max(abs(trade.entry - trade.sl), 1e-9) if trade.is_long else (trade.entry - trade.tp1) / max(abs(trade.entry - trade.sl), 1e-9)
-    tp2_r = (trade.tp2 - trade.entry) / max(abs(trade.entry - trade.sl), 1e-9) if trade.is_long else (trade.entry - trade.tp2) / max(abs(trade.entry - trade.sl), 1e-9)
-    tp3_r = (trade.tp3 - trade.entry) / max(abs(trade.entry - trade.sl), 1e-9) if trade.is_long else (trade.entry - trade.tp3) / max(abs(trade.entry - trade.sl), 1e-9)
+    sl_dist = max(abs(trade.entry - trade.sl), 1e-9)
+    tp1_price = (trade.tp1 - spread_cost) if trade.is_long else (trade.tp1 + spread_cost)
+    tp2_price = (trade.tp2 - spread_cost) if trade.is_long else (trade.tp2 + spread_cost)
+    tp3_price = (trade.tp3 - spread_cost) if trade.is_long else (trade.tp3 + spread_cost)
+    sl_price = (trade.sl - spread_cost) if trade.is_long else (trade.sl + spread_cost)
+    tp1_r = (tp1_price - trade.entry) / sl_dist if trade.is_long else (trade.entry - tp1_price) / sl_dist
+    tp2_r = (tp2_price - trade.entry) / sl_dist if trade.is_long else (trade.entry - tp2_price) / sl_dist
+    tp3_r = (tp3_price - trade.entry) / sl_dist if trade.is_long else (trade.entry - tp3_price) / sl_dist
     reached = [trade.tp1_hit, trade.tp2_hit, trade.tp3_hit]
     if exit_reason == "TP3":
         reached = [True, True, True]
     rr = 0.0
     for ratio, hit, lvl_r in zip(ratios, reached, (tp1_r, tp2_r, tp3_r)):
-        rr += ratio * (lvl_r if hit else -1.0)
+        rr += ratio * (lvl_r if hit else ((sl_price - trade.entry) / sl_dist if trade.is_long else (trade.entry - sl_price) / sl_dist))
     return round(rr, 4)
 
 
@@ -284,7 +289,7 @@ def _resolve_same_bar_exit(tp_hit: bool, sl_hit: bool, same_bar_priority: str) -
         return "SL"
     return None
 
-def _update_trade_with_bar(trade: PaperTrade, bar_time: int, bar_high: float, bar_low: float, same_bar_priority: str = "conservative") -> tuple[PaperTrade, bool]:
+def _update_trade_with_bar(trade: PaperTrade, bar_time: int, bar_high: float, bar_low: float, same_bar_priority: str = "conservative", spread_cost: float = 0.0) -> tuple[PaperTrade, bool]:
     if trade.status != "open":
         return trade, False
     changed = False
@@ -317,14 +322,14 @@ def _update_trade_with_bar(trade: PaperTrade, bar_time: int, bar_high: float, ba
             trade.tp3_hit = True
             trade.status = "tp3_hit"
             trade.exit_reason = "TP3"
-            trade.result_r = _weighted_result_r(trade, "TP3")
+            trade.result_r = _weighted_result_r(trade, "TP3", spread_cost=spread_cost)
             trade.closed_bar_time = bar_time
             return trade, True
         if decision == "SL":
             trade.sl_hit = True
             trade.status = "sl_hit"
             trade.exit_reason = "SL"
-            trade.result_r = _weighted_result_r(trade, "SL")
+            trade.result_r = _weighted_result_r(trade, "SL", spread_cost=spread_cost)
             trade.closed_bar_time = bar_time
             return trade, True
     else:
@@ -349,28 +354,28 @@ def _update_trade_with_bar(trade: PaperTrade, bar_time: int, bar_high: float, ba
             trade.tp3_hit = True
             trade.status = "tp3_hit"
             trade.exit_reason = "TP3"
-            trade.result_r = _weighted_result_r(trade, "TP3")
+            trade.result_r = _weighted_result_r(trade, "TP3", spread_cost=spread_cost)
             trade.closed_bar_time = bar_time
             return trade, True
         if decision == "SL":
             trade.sl_hit = True
             trade.status = "sl_hit"
             trade.exit_reason = "SL"
-            trade.result_r = _weighted_result_r(trade, "SL")
+            trade.result_r = _weighted_result_r(trade, "SL", spread_cost=spread_cost)
             trade.closed_bar_time = bar_time
             return trade, True
 
     return trade, changed
 
 
-def update_open_paper_trades(symbol: str, timeframe: str, bar_time: int, bar_high: float, bar_low: float, path: str = "paper_trades.json", same_bar_priority: str = "conservative") -> list[PaperTrade]:
+def update_open_paper_trades(symbol: str, timeframe: str, bar_time: int, bar_high: float, bar_low: float, path: str = "paper_trades.json", same_bar_priority: str = "conservative", spread_cost: float = 0.0) -> list[PaperTrade]:
     trades = load_paper_trades(path)
     changed = False
     updates: list[PaperTrade] = []
     for idx, trade in enumerate(trades):
         if trade.symbol != symbol or trade.timeframe != timeframe:
             continue
-        updated, was_changed = _update_trade_with_bar(trade, bar_time, bar_high, bar_low, same_bar_priority=same_bar_priority)
+        updated, was_changed = _update_trade_with_bar(trade, bar_time, bar_high, bar_low, same_bar_priority=same_bar_priority, spread_cost=spread_cost)
         if was_changed:
             trades[idx] = updated
             updates.append(updated)
