@@ -72,6 +72,9 @@ class BotConfig:
     runtime_weight_reduction_factor: float = 0.8
     trend_min_atr: float = 0.0
     range_dead_atr_threshold: float = 0.0
+    scorer_volatility_threshold: float = 0.20
+    session_penalty_avg_r_threshold: float = -0.3
+    session_penalty_points: int = 5
     paper_max_slippage_points: int = 4
     learning_spread_cost_points: int = 10
     learning_slippage_points: int = 5

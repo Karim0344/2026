@@ -141,6 +141,7 @@ class TradingEngine:
         self.last_loss_ts: float = 0.0
         self.raw_score_window = deque(maxlen=100)
         self._active_strategy = ""
+        self.session_performance: dict[str, list[float]] = {}
 
     def _soft_score(self, raw_score: float) -> int:
         raw = float(raw_score)
@@ -399,9 +400,18 @@ class TradingEngine:
         context_score = max(-15, min(15, context_score))
         pattern_score = max(-15, min(15, pattern_score))
         strategy_edge_score = max(-20, min(20, strategy_edge_score))
-        raw_score_pre = setup_score + context_score + pattern_score + strategy_edge_score + selector_bonus
-        raw_score_final = raw_score_pre - spread_penalty - bad_session_penalty - side_penalty
-        final_score = max(0, min(100, int(round(raw_score_final))))
+        self._active_strategy = str(intent.reason)
+        raw_score_pre, raw_score_final, final_score, _ = self._compute_final_score(
+            setup_score=setup_score,
+            context_score=context_score,
+            pattern_score=pattern_score,
+            strategy_edge_score=strategy_edge_score,
+            selector_bonus=selector_bonus,
+            spread_penalty=spread_penalty,
+            session_penalty=bad_session_penalty,
+            side_penalty=side_penalty,
+            runtime_penalty=0,
+        )
         logging.info(
             "CANDIDATE_EVAL stage=%s symbol=%s tf=%s regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s spread_penalty=%s bad_session_penalty=%s side_penalty=%s raw_score_pre=%s raw_score_final=%s final_score=%s decision=%s reject_reason=%s",
             ("pre_filter" if str(decision).startswith("skip_") else "final"), self.cfg.symbol, self.cfg.timeframe, regime, intent.reason, side, setup_score, context_score, pattern_score, strategy_edge_score, selector_bonus, spread_penalty, bad_session_penalty, side_penalty, raw_score_pre, raw_score_final, final_score, decision, reject_reason,
@@ -683,6 +693,11 @@ class TradingEngine:
                         runs.append(rr_realized)
                         if len(runs) > 20:
                             del runs[0]
+                        session_key = str((getattr(trade, "features", {}) or {}).get("session_name", ""))
+                        session_runs = self.session_performance.setdefault(session_key, [])
+                        session_runs.append(rr_realized)
+                        if len(session_runs) > 20:
+                            del session_runs[0]
                         if rr_realized < 0:
                             self.recent_loss_streak += 1
                             self.last_loss_ts = time.time()
@@ -1017,8 +1032,8 @@ class TradingEngine:
                     spread_penalty = 0 if spread_points < self.cfg.max_spread_points else 8
                     bad_session_penalty = 3 if features.get("session_name") in ("Asia",) else 0
                     side_penalty = 30 if side_inconsistent else 0
-                    no_data_count = int(context_reason == "no_data") + int(pattern_reason == "no_data")
-                    if no_data_count >= 2:
+                    no_data_penalty = 0
+                    if context_reason == "no_data" and pattern_reason == "no_data":
                         decision = "blocked_no_data"
                         reject_reason = "blocked_no_data"
                         self._log_candidate_eval(intent=intent, regime=regime, closed_bar_time=closed_bar_time, decision=decision, reject_reason=reject_reason)
@@ -1041,6 +1056,10 @@ class TradingEngine:
                     strategy_runs = self.recent_performance.get(str(intent.reason), [])
                     if strategy_runs and (sum(strategy_runs) / max(len(strategy_runs), 1)) < -0.3:
                         runtime_penalty = 5
+                    session_name = str(features.get("session_name", ""))
+                    session_runs = self.session_performance.get(session_name, [])
+                    if session_runs and (sum(session_runs) / max(len(session_runs), 1)) < float(getattr(self.cfg, "session_penalty_avg_r_threshold", -0.3)):
+                        runtime_penalty += int(getattr(self.cfg, "session_penalty_points", 5))
                     edge_penalty = 0
                     edge_details = self.strategy_edge_scorer.latest_lookup_result if hasattr(self.strategy_edge_scorer, "latest_lookup_result") else {}
                     tp3_rate = float(getattr(self.strategy_edge_scorer, "last_tp3_rate", 1.0))
@@ -1134,6 +1153,13 @@ class TradingEngine:
                     if len(session_trades) >= int(getattr(self.cfg, "max_trades_per_session", 20)):
                         decision = "max_trades_per_session"
                         reject_reason = "max_trades_per_session"
+                    same_side_open = [t for t in session_trades if t.status == "open" and bool(t.is_long) == bool(intent.is_long)]
+                    if same_side_open:
+                        latest = same_side_open[-1]
+                        atr_value = float(features.get("atr", 0.0) or 0.0)
+                        if atr_value > 0 and abs(float(entry) - float(latest.entry)) < (atr_value * float(getattr(self.cfg, "duplicate_entry_atr_tolerance", 0.5))):
+                            decision = "cluster_blocked"
+                            reject_reason = "cluster_blocked"
                     logging.info(
                         "LIVE_DECISION regime=%s strategy=%s side=%s setup_score=%s context_score=%s pattern_score=%s strategy_edge_score=%s selector_bonus=%s spread_penalty=%s bad_session_penalty=%s side_penalty=%s no_data_penalty=%s raw_score_pre=%s raw_score_final=%s final_score=%s confidence=%.2f decision=%s context_reason=%s pattern_reason=%s strategy_edge_reason=%s",
                         regime,
