@@ -28,6 +28,11 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
     touch_tol_mult = float(getattr(cfg, "range_touch_tol_mult", 0.2))
     min_atr_ratio = float(getattr(cfg, "range_min_atr_ratio", 1.3))
     max_atr_ratio = float(getattr(cfg, "range_max_atr_ratio", 20.0))
+    atr_ratio_window = int(getattr(cfg, "range_atr_ratio_window", 240))
+    max_quantile = float(getattr(cfg, "range_atr_ratio_max_quantile", 0.95))
+    max_buffer = float(getattr(cfg, "range_atr_ratio_max_buffer", 1.1))
+    min_quantile = float(getattr(cfg, "range_atr_ratio_min_quantile", 0.50))
+    min_floor = float(getattr(cfg, "range_atr_ratio_min_floor", 0.50))
     max_atr_ratio_percentile = float(getattr(cfg, "range_max_atr_ratio_percentile", 0.95))
     atr_ratio_percentile_window = max(int(getattr(cfg, "range_atr_ratio_percentile_window", 240)), 30)
     required_touches = int(getattr(cfg, "range_required_touches", 1))
@@ -81,6 +86,40 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
 
     range_width = high_zone - low_zone
     atr_ratio = range_width / atr if atr > 0 else 0.0
+
+    atr_series = (
+        pd.concat(
+            [
+                (df["high"] - df["low"]),
+                (df["high"] - df["close"].shift(1)).abs(),
+                (df["low"] - df["close"].shift(1)).abs(),
+            ],
+            axis=1,
+        )
+        .max(axis=1)
+        .rolling(14)
+        .mean()
+    )
+    hist_high = df["high"].shift(3).rolling(lookback).max()
+    hist_low = df["low"].shift(3).rolling(lookback).min()
+    atr_ratio_hist = ((hist_high - hist_low) / atr_series.replace(0.0, float("nan"))).dropna()
+    if atr_ratio_window > 0:
+        atr_ratio_hist = atr_ratio_hist.iloc[-atr_ratio_window:]
+    if not atr_ratio_hist.empty:
+        min_quantile = min(max(min_quantile, 0.0), 1.0)
+        max_quantile = min(max(max_quantile, 0.0), 1.0)
+        p50 = float(atr_ratio_hist.quantile(0.50))
+        p75 = float(atr_ratio_hist.quantile(0.75))
+        p90 = float(atr_ratio_hist.quantile(0.90))
+        p95 = float(atr_ratio_hist.quantile(0.95))
+        min_from_dist = float(atr_ratio_hist.quantile(min_quantile)) * 0.60
+        max_from_dist = float(atr_ratio_hist.quantile(max_quantile)) * max(max_buffer, 1.0)
+        dynamic_min = max(min_floor, min(min_from_dist, max_from_dist - 1e-6))
+        dynamic_max = max(max_from_dist, dynamic_min + 1e-6)
+    else:
+        p50 = p75 = p90 = p95 = 0.0
+        dynamic_min = min_atr_ratio
+        dynamic_max = max_atr_ratio
     ratio_series = (
         (df["high"].rolling(lookback).max() - df["low"].rolling(lookback).min())
         / (
@@ -166,6 +205,12 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
         "middle_override_bottom": middle_override_bottom,
         "range_min_atr_ratio": round(min_atr_ratio, 3),
         "range_max_atr_ratio": round(max_atr_ratio, 3),
+        "range_min_atr_ratio_dynamic": round(dynamic_min, 3),
+        "range_max_atr_ratio_dynamic": round(dynamic_max, 3),
+        "atr_ratio_p50": round(p50, 3),
+        "atr_ratio_p75": round(p75, 3),
+        "atr_ratio_p90": round(p90, 3),
+        "atr_ratio_p95": round(p95, 3),
         "range_max_atr_ratio_percentile": round(max_atr_ratio_percentile, 3),
         "range_atr_ratio_percentile_window": atr_ratio_percentile_window,
         "range_max_atr_ratio_dynamic": round(dynamic_max_atr_ratio, 3),
@@ -178,6 +223,9 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
         "wick_body_min": round(wick_body_min, 3),
     }
 
+    if atr_ratio < dynamic_min or atr_ratio > dynamic_max:
+        debug["min_required"] = round(dynamic_min, 3)
+        debug["max_allowed"] = round(dynamic_max, 3)
     if atr_ratio < min_atr_ratio or atr_ratio > effective_max_atr_ratio:
         debug["min_required"] = round(min_atr_ratio, 3)
         debug["max_allowed"] = round(effective_max_atr_ratio, 3)
