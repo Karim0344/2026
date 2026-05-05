@@ -71,9 +71,11 @@ class StrategyEdgeScorer:
             if count < int(min_samples):
                 return 0, "low_samples"
             avg_r = float(row.iloc[0].get("avg_r", 0.0))
+            tp1_rate = float(row.iloc[0].get("tp1_rate", 0.0) or 0.0)
             self.last_tp3_rate = float(row.iloc[0].get("tp3_rate", 1.0) or 1.0)
             self.last_sl_rate = float(row.iloc[0].get("sl_rate", 0.0) or 0.0)
-            raw = max(-20.0, min(20.0, avg_r * 25.0))
+            edge_score = (avg_r * 0.5) + ((tp1_rate - self.last_sl_rate) * 0.5)
+            raw = max(-20.0, min(20.0, edge_score * 25.0))
             confidence = min(1.0, count / max(int(min_samples) * 3, 1))
             score = int(round(raw * confidence * self.weight))
             if count < int(min_samples) * 3:

@@ -44,6 +44,8 @@ class ContextScorer:
             df = df[df["side"] == lookup.get("side")]
         if "regime" in df.columns and lookup.get("regime") is not None:
             df = df[df["regime"] == lookup.get("regime")]
+        if "volatility" in df.columns and lookup.get("volatility") is not None:
+            df = df[df["volatility"] == lookup.get("volatility")]
         if df.empty:
             return 0, "no_data"
 

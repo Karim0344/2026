@@ -47,11 +47,7 @@ class PatternScorer:
         if "side" in df.columns and "side" in lk:
             df = df[df["side"] == lk["side"]]
         if "regime" in df.columns and "regime" in lk:
-            reg = str(lk["regime"])
-            if reg in ("range_breakout_pressure_up", "range_breakout_pressure_down"):
-                df = df[df["regime"].isin([reg, "range"]) ]
-            else:
-                df = df[df["regime"] == reg]
+            df = df[df["regime"] == str(lk["regime"])]
         if df.empty:
             return 0, "no_data"
         weights = {
@@ -66,6 +62,15 @@ class PatternScorer:
             if k in df.columns and k in lk:
                 sim += (df[k] == lk[k]).astype(float) * w
         df["match_score"] = sim / total_w
+        if "volatility" in df.columns and "volatility" in lk:
+            vol_threshold = float(getattr(self.cfg, "scorer_volatility_threshold", 0.20))
+            target_vol = str(lk.get("volatility", "")).strip().lower()
+            if target_vol:
+                diff = (df["volatility"].astype(str).str.strip().str.lower() != target_vol)
+                if vol_threshold <= 0:
+                    df = df[~diff]
+                else:
+                    df.loc[diff, "match_score"] = 0.0
         if "count" not in df.columns:
             return 0, "no_data"
         max_count = int(df["count"].max()) if not df.empty else 0
