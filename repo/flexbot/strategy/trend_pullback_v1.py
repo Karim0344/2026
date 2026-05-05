@@ -79,6 +79,8 @@ def get_intent(symbol: str, timeframe: str, cfg, last_closed_bar_time: int) -> T
 
     if np.isnan(ma_fast) or np.isnan(ma_trend) or np.isnan(atr):
         return TradeIntent(False, entry=close, reason="nan")
+    if atr < float(getattr(cfg, "trend_min_atr", 0.0)):
+        return TradeIntent(False, entry=close, reason="trend_low_atr")
 
     trend_long = close > ma_trend
     trend_short = close < ma_trend
