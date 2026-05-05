@@ -76,6 +76,8 @@ def get_range_intent(symbol: str, timeframe: str, cfg) -> Intent:
 
     if range_ == 0 or pd.isna(atr) or atr <= 0:
         return Intent(None, 0.0, 0.0, "invalid_candle_or_atr", {})
+    if atr < float(getattr(cfg, "range_dead_atr_threshold", 0.0)):
+        return Intent(None, close, 0.0, "dead", {"regime": "dead", "atr": round(float(atr), 5)})
 
     range_width = high_zone - low_zone
     atr_ratio = range_width / atr if atr > 0 else 0.0

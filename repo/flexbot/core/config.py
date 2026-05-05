@@ -66,6 +66,13 @@ class BotConfig:
     weight_context: float = 0.6
     weight_pattern: float = 0.6
     weight_strategy: float = 0.8
+    weight_selector: float = 0.5
+    weight_penalty: float = 1.0
+    runtime_adapt_drawdown_trigger: float = -0.2
+    runtime_weight_reduction_factor: float = 0.8
+    trend_min_atr: float = 0.0
+    range_dead_atr_threshold: float = 0.0
+    paper_max_slippage_points: int = 4
     learning_spread_cost_points: int = 10
     learning_slippage_points: int = 5
     learning_point_size: float = 0.01
